@@ -1,0 +1,397 @@
+Production vs Fabric Data Validation Report
+Validation Scope
+
+Source: Production (df_Prod)
+ Target: Fabric (df_Fabric)
+
+Validation Window
+
+DATE_TIME BETWEEN '2026-05-03 00:00:00'
+AND '2026-05-03 01:00:00'
+
+Executive Summary
+Overall Result
+
+⚠️ Validation Failed / Requires Investigation
+
+The Fabric dataset is not fully reconciled with Production.
+
+Metric	Production	FabricTotal Rows	8,871	9,352
+Distinct LOTs	1,240	1,307
+Match %	96.76%	-
+Rows Missing in Fabric	80	-
+Extra Rows in Fabric	-	561
+
+Fabric contains:
+
+481 net additional rows
+561 rows not found in Production
+80 Production rows missing in Fabric
+
+1. Volume Reconciliation
+Metric	CountProduction Rows	8,871
+Fabric Rows	9,352
+Variance	+481
+Observation
+
+Fabric contains approximately:
+
+5.42% more rows
+
+
+than Production.
+
+2. Exact Row Matching
+Metric	CountCommon Rows	8,584
+Total Production Rows	8,871
+Match Percentage	96.76%
+Interpretation
+
+Almost 97% of records match exactly.
+
+The remaining 3.24% require analysis.
+
+3. Distinct Entity Comparison
+Attribute	Prod	Fabric	VarianceLOT	1240	1307	+67
+DATE_TIME	2359	2538	+179
+OPER	382	416	+34
+MASK_LVL	57	62	+5
+OPERDESC	122	126	+4
+OPERLONGDESC	443	483	+40
+MACHINE	153	156	+3
+USERNAME	192	200	+8
+HIST_REC	1262	1312	+50
+EMPID	63	64	+1
+Observation
+
+Fabric consistently contains more distinct business values.
+
+This suggests additional lots and events are being loaded.
+
+4. Duplicate Analysis
+Full Row Duplicates
+Dataset	Duplicate RowsProduction	207
+Fabric	226
+Observation
+
+Both datasets contain duplicates.
+
+Fabric has:
+
+226 - 207 = 19
+
+
+additional duplicate rows.
+
+5. Null Analysis
+MACHINE Column
+Dataset	NULL MACHINEProduction	3,830
+Fabric	3,917
+
+Difference:
+
+87 additional NULL machine values
+
+All Other Columns
+
+No null variance detected.
+
+✅ Null handling appears consistent.
+
+6. Date Range Validation
+Production
+Min: 00:00.3
+Max: 59:57.4
+
+Fabric
+Min: 00:00.3
+Max: 59:57.4
+
+
+✅ Both datasets cover the exact same time window.
+
+7. Missing Records Analysis
+Records Present In Production But Missing In Fabric
+
+Count:
+
+80
+
+
+Major missing LOTs:
+
+5451A0A7A
+7579A1C5A
+7407A027B
+6362A275A
+6786A1A0A
+5773A1A5A
+6802A164A
+6802A165A
+7423A021A
+5941A0F3A
+
+Characteristics
+
+These are mostly:
+
+LA
+MV
+IN
+DL
+SR
+TX
+CS
+CM
+
+
+transaction types.
+
+This indicates complete process movements missing for several lots.
+
+8. Fabric Extra Records
+
+Count:
+
+561
+
+
+Examples:
+
+6515A0B6
+6221AJV0
+5502A1C5
+6514A2Y4
+7192A1D8A
+6339A2G5B
+6814A022
+T2644W0629
+T2652W5160
+T2705W7597
+
+Observation
+
+Many Fabric-only records belong to:
+
+LL  (Location)
+CM  (Comments)
+AR  (Recipe)
+RT  (Route)
+KL  (Kit Lot)
+
+
+transactions.
+
+9. HISTCODE Analysis
+Largest Variances
+HISTCODE	DifferenceCM	+147
+LL	+115
+DL	+29
+IN	+24
+SR	+24
+TX	+22
+OI	+20
+WM	+16
+AR	+14
+LA	+14
+MV	+14
+Key Observation
+
+The majority of the variance is concentrated in:
+
+CM = Comments
+LL = Location
+
+
+Combined difference:
+
+147 + 115 = 262 records
+
+
+More than half of the total variance.
+
+This strongly suggests Fabric is generating or loading additional Location and Comment records.
+
+10. Column-Level Data Mismatch Analysis
+
+Using matched keys:
+
+LOT
+DATE_TIME
+HISTORDER
+
+Attribute Mismatches
+Column	Mismatch CountOPER	4
+OPERDESC	10
+OPERLONGDESC	10
+MACHINE	16
+USERNAME	18
+COMMAND	492
+TRANS	1,854
+HIST_REC	2,764
+EMPID	0
+Most Important Finding
+HIST_REC
+
+Mismatch Count:
+
+2,764
+
+
+This is the biggest issue.
+
+Likely Cause
+
+The SQL Server function:
+
+TrainingVision.PF_LOTHIST_HISTORY3
+
+
+has not been fully migrated to Fabric.
+
+Your simplified UDF only handles a small subset of HISTCODEs.
+
+The Fabric-generated:
+
+HIST_REC
+
+
+does not match Production.
+
+TRANS
+
+Mismatch Count:
+
+1,854
+
+Likely Cause
+
+Join issue with:
+
+VisionProd.dbo.HISTCODES
+
+
+or datatype/case formatting differences.
+
+COMMAND
+
+Mismatch Count:
+
+492
+
+
+Needs review.
+
+Potential causes:
+
+source lookup issue
+trim/case differences
+duplicate joins
+11. EMPID Validation
+ResultEMPID Mismatches = 0
+
+✅ Perfect match
+
+This confirms personnel mapping logic migrated correctly.
+
+12. MACHINE Validation
+
+Mismatch Count:
+
+16
+
+
+Very small.
+
+✅ Machine mapping is largely correct.
+
+Root Cause Assessment
+
+Based on all evidence, the discrepancies are primarily caused by:
+
+1. Incomplete PF_LOTHIST_HISTORY3 Migration
+
+Evidence:
+
+HIST_REC mismatch = 2764
+
+
+Highest mismatch by far.
+
+2. Extra Comment Records
+
+Evidence:
+
+CM difference = 147
+
+3. Extra Location Records
+
+Evidence:
+
+LL difference = 115
+
+4. Additional Lots Loaded Into Fabric
+
+Evidence:
+
+Distinct LOTs
+
+Prod   = 1240
+Fabric = 1307
+
+Difference = 67 Lots
+
+5. Join / Lookup Differences
+
+Evidence:
+
+TRANS mismatch = 1854
+COMMAND mismatch = 492
+
+Recommended Next Validation
+
+Run these focused comparisons:
+
+TRANS
+compare.filter(
+    F.col("p.TRANS") != F.col("f.TRANS")
+).select(
+    "LOT",
+    "DATE_TIME",
+    "HISTORDER",
+    F.col("p.TRANS").alias("PROD_TRANS"),
+    F.col("f.TRANS").alias("FABRIC_TRANS")
+).show(200, False)
+
+COMMAND
+compare.filter(
+    F.col("p.COMMAND") != F.col("f.COMMAND")
+).show(200, False)
+
+HIST_REC
+compare.filter(
+    F.col("p.HIST_REC") != F.col("f.HIST_REC")
+).show(200, False)
+
+Final Conclusion
+Area	StatusRow Count	❌ Failed
+LOT Coverage	❌ Failed
+Null Handling	✅ Passed
+EMPID Mapping	✅ Passed
+Machine Mapping	✅ Passed
+HISTCODE Coverage	✅ Mostly Passed
+HIST_REC Generation	❌ Failed
+TRANS Mapping	❌ Failed
+Command Mapping	❌ Failed
+Overall Match %	✅ 96.76%
+Overall Assessment
+
+The Fabric implementation is close but not production-ready. The main reconciliation issues are concentrated in:
+
+PF_LOTHIST_HISTORY3 migration (HIST_REC)
+TRANS derivation
+COMMAND derivation
+Additional CM and LL rows
+67 additional LOTs present only in Fabric
+
+Fixing those areas will likely bring the reconciliation above 99.5%.
