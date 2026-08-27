@@ -1,0 +1,201 @@
+Here's a concise validation report you can use for your Fabric migration/testing documentation.
+
+Production vs Fabric Data Validation Report
+Validation Scope
+
+Source (Production): df_Prod
+ Target (Fabric): df_Fabric
+
+Validation Window
+
+DATE_TIME BETWEEN '2026-05-03 00:00:00'
+AND '2026-05-03 01:00:00'
+
+1. Row Count Comparison
+Metric	CountProduction Rows	8,871
+Fabric Rows	9,352
+Common Rows	8,584
+Rows Only in Production	80
+Rows Only in Fabric	561
+Observation
+Fabric contains 481 more rows than Production.
+Only 8,584 rows match exactly between both datasets.
+There are 80 unmatched rows in Production.
+There are 561 unmatched rows in Fabric.
+2. Distinct Value Comparison
+Column	Production	Fabric	DifferenceLOT	1,240	1,307	+67
+DATE_TIME	2,359	2,538	+179
+HISTORDER	341	341	0
+TRANS	37	37	0
+OPER	382	416	+34
+MASK_LVL	57	62	+5
+OPERDESC	122	126	+4
+OPERLONGDESC	443	483	+40
+MACHINE	153	156	+3
+USERNAME	192	200	+8
+HIST_REC	1,262	1,312	+50
+HISTCODE	37	37	0
+COMMAND	18	18	0
+SHORTREPORT	2	2	0
+VIEWFLAG	2	2	0
+Is_Person	2	2	0
+IS_DUPLICATE	2	2	0
+EMPID	63	64	+1
+3. Key Findings
+Matching Dimensions
+
+The following columns have identical distinct counts in both environments:
+
+HISTORDER
+TRANS
+HISTCODE
+COMMAND
+SHORTREPORT
+VIEWFLAG
+Is_Person
+IS_DUPLICATE
+
+This indicates that core business logic and lookup mappings appear to be working correctly.
+
+Differences Observed
+
+Fabric shows higher distinct counts in:
+
+LOT (+67)
+DATE_TIME (+179)
+OPER (+34)
+MASK_LVL (+5)
+OPERDESC (+4)
+OPERLONGDESC (+40)
+USERNAME (+8)
+HIST_REC (+50)
+EMPID (+1)
+
+This suggests additional records are being generated or included in Fabric.
+
+4. Production Records Missing in Fabric
+
+Unique LOTs observed in Production but not found in Fabric:
+
+5451A0A7A
+7579A1C5A
+7407A027B
+6362A275A
+6786A1A0A
+5773A1A5A
+6802A164A
+6802A165A
+7423A021A
+5941A0F3A
+
+
+Count of unmatched Production rows:
+
+80
+
+5. Fabric Records Missing in Production
+
+Sample unique LOTs observed in Fabric but not found in Production:
+
+6339A2G5B
+6515A0B6
+5781A049
+6814A022
+6514A2Y4
+5765A044
+6221AJV0
+6098A0B7
+7030A009
+7579A1A2
+5297TB089
+5620AFT6
+6514A2H8
+5502A1C5
+5673TEL7
+6621A5C8
+5639A9P3
+
+
+Count of unmatched Fabric rows:
+
+561
+
+6. Preliminary Assessment
+Successful Areas
+
+✅ Lookup joins appear consistent because:
+
+HISTCODE counts match
+TRANS counts match
+VIEWFLAG counts match
+
+✅ Business classifications appear consistent:
+
+Is_Person counts match
+IS_DUPLICATE counts match
+Areas Requiring Investigation
+Additional Rows in Fabric
+
+Fabric contains:
+
+9352 - 8871 = 481 extra rows
+
+
+Potential causes:
+
+Different source extraction window
+Join expansion resulting in duplicate rows
+Additional LOTs loaded into Fabric
+Duplicate records in staging tables
+Differences in DATE_TIME filtering logic
+Missing Production Records
+
+Investigate the following LOTs:
+
+5451A0A7A
+7579A1C5A
+7407A027B
+6362A275A
+6786A1A0A
+5773A1A5A
+6802A164A
+6802A165A
+7423A021A
+5941A0F3A
+
+7. Recommended Next Step
+
+Compare records using the natural key:
+
+LOT
+DATE_TIME
+HISTORDER
+
+
+Run:
+
+keys = ["LOT", "DATE_TIME", "HISTORDER"]
+
+prod_missing = df_Prod.join(df_Fabric, keys, "left_anti")
+fabric_missing = df_Fabric.join(df_Prod, keys, "left_anti")
+
+
+This will determine whether the discrepancy is caused by:
+
+Missing records
+Duplicate records
+Differences in non-key attributes (OPERDESC, HIST_REC, USERNAME, etc.)
+Conclusion
+
+The migration is approximately 96.8% aligned:
+
+8584 common rows / 8871 production rows = 96.8%
+
+
+However, there are:
+
+80 Production records missing in Fabric
+561 Fabric records not present in Production
+481 net additional rows in Fabric
+
+The next validation step should focus on comparing records at the (LOT, DATE_TIME, HISTORDER) level to identify the exact source of the discrepancies.
