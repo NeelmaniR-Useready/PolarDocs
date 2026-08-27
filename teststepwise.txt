@@ -395,3 +395,531 @@ Additional CM and LL rows
 67 additional LOTs present only in Fabric
 
 Fixing those areas will likely bring the reconciliation above 99.5%.
+
+
+
+Production vs Fabric Data Validation Report
+Validation Scope
+
+Source: Production (df_Prod)
+ Target: Fabric (df_Fabric)
+
+Time Window
+
+DATE_TIME BETWEEN '2026-05-03 00:00:00'
+AND '2026-05-03 01:00:00'
+
+Executive Summary
+Overall Result
+
+⚠️ Validation Failed
+
+The Fabric dataset is not reconciled with Production for this validation window.
+
+Although the overall match percentage is high (96.76%), the differences are systematic and indicate logic discrepancies rather than minor data delays.
+
+Final Verdict
+Area	StatusTime Window Coverage	✅ Pass
+Null Handling	✅ Pass
+EMPID Mapping	✅ Pass
+Basic Schema Validation	✅ Pass
+Row Count Validation	❌ Fail
+LOT Validation	❌ Fail
+TRANS Derivation	❌ Fail
+COMMAND Derivation	❌ Fail
+HIST_REC Generation	❌ Fail
+Event Sequencing	❌ Fail
+Business Logic Reconciliation	❌ Fail
+1. Volume Validation
+Record Counts
+Metric	Production	Fabric	DifferenceRows	8,871	9,352	+481
+Distinct LOTs	1,240	1,307	+67
+Findings
+
+Fabric contains:
+
+481 additional rows
+67 additional LOTs
+
+
+This indicates Fabric is loading events that do not exist in Production for the same validation period.
+
+2. Exact Match Analysis
+Metric	CountCommon Rows	8,584
+Only in Production	80
+Only in Fabric	561
+Match Rate
+8584 / 8871 = 96.76%
+
+Interpretation
+
+Approximately 3.24% of Production data is not reconciled.
+
+3. Duplicate Analysis
+Duplicate Records
+Dataset	DuplicatesProduction	207
+Fabric	226
+Finding
+
+Fabric contains:
+
+19 more duplicate rows
+
+
+than Production.
+
+4. Null Analysis
+MACHINE Column
+Dataset	Null ValuesProduction	3,830
+Fabric	3,917
+
+Difference:
+
+87 extra NULL machine values
+
+
+All other columns match perfectly.
+
+✅ Null handling is largely correct.
+
+5. Distinct Value Validation
+
+Columns with increased cardinality in Fabric:
+
+Column	Prod	Fabric	DeltaLOT	1240	1307	+67
+DATE_TIME	2359	2538	+179
+OPER	382	416	+34
+OPERLONGDESC	443	483	+40
+HIST_REC	1262	1312	+50
+USERNAME	192	200	+8
+MACHINE	153	156	+3
+EMPID	63	64	+1
+Finding
+
+Fabric consistently contains additional business values.
+
+This confirms the variance is not isolated to a single field.
+
+6. HISTCODE Analysis
+Largest Variances
+HISTCODE	Prod	Fabric	DeltaCM	3374	3521	+147
+LL	1362	1477	+115
+DL	324	353	+29
+IN	287	311	+24
+SR	301	325	+24
+TX	362	384	+22
+OI	250	270	+20
+Key Observation
+
+Most additional Fabric records belong to:
+
+CM  = Comment
+LL  = Location
+DL  = Dispatch
+IN  = Move In
+SR  = Suggested Recipe
+TX  = Transition
+
+
+These are process-event records.
+
+This strongly indicates event generation logic is different between Fabric and Production.
+
+7. Missing Production Records
+
+Production contains 80 records not present in Fabric.
+
+Examples:
+
+5451A0A7A
+7579A1C5A
+7407A027B
+6362A275A
+6786A1A0A
+5773A1A5A
+6802A164A
+6802A165A
+7423A021A
+5941A0F3A
+
+
+These are complete event chains rather than isolated records.
+
+8. Additional Fabric Records
+
+Fabric contains 561 records not present in Production.
+
+Examples:
+
+6515A0B6
+6221AJV0
+5502A1C5
+6514A2Y4
+7192A1D8A
+6339A2G5B
+6814A022
+T2644W0629
+T2652W5160
+T2705W7597
+
+Observation
+
+Most Fabric-only rows belong to:
+
+LOCATION
+COMMENT
+PART NUM
+KIT LOT
+ROUTE
+RECIPE
+
+
+event types.
+
+9. Column Mismatch Analysis
+Summary
+Column	MismatchesHIST_REC	2,764
+TRANS	1,854
+COMMAND	492
+USERNAME	18
+MACHINE	16
+OPERDESC	10
+OPERLONGDESC	10
+OPER	4
+EMPID	0
+10. Root Cause Analysis - TRANS
+
+This is the biggest discovery from the detailed reconciliation.
+
+Example 1
+
+Production:
+
+TRANS = COMMENT
+
+
+Fabric:
+
+TRANS = PART NUM
+
+
+Example:
+
+T2636W2577
+T2651W4434
+T2649W0036
+...
+
+
+Observed hundreds of times.
+
+Example 2
+
+Production
+
+WAF CHCKSM
+
+
+Fabric
+
+TRANSITION
+
+
+Example:
+
+6814A022A
+5639A9Q6A
+6554A067
+
+Example 3
+
+Production
+
+DISPATCH
+
+
+Fabric
+
+COMMENT
+
+
+and vice versa.
+
+Example:
+
+7499A027
+5552A010B
+7020A001A
+
+Conclusion
+
+Fabric is assigning the wrong transaction type to events.
+
+This is not missing data.
+
+This is event-type misclassification.
+
+11. Root Cause Analysis - COMMAND
+
+Mismatch Count:
+
+492
+
+
+Major Pattern:
+
+Production:
+
+LMVR
+
+
+Fabric:
+
+TRAN
+
+
+Examples:
+
+7309A0A7
+4562AZ88
+6514A3V2
+7412A093
+
+
+Another pattern:
+
+Production:
+
+LMVR
+
+
+Fabric:
+
+MVIN
+
+
+Examples:
+
+6802A165
+6515A0K4
+7579A1D8
+
+Conclusion
+
+Fabric command assignment logic does not match Production command mapping.
+
+12. Root Cause Analysis - HIST_REC
+
+This is the largest discrepancy.
+
+Total Mismatches
+2764
+
+Example
+
+Production
+
+status set to Inactive.
+
+
+Fabric
+
+OLD PART:T_P_8DEFCT
+
+
+Example lots:
+
+T2636W2577
+T2651W4434
+T2649W0036
+...
+
+
+Repeated across many records.
+
+Example
+
+Production
+
+CheckSum Verified: Wafer 02
+
+
+Fabric
+
+QTY: 25 Lot is Being Moved-In
+
+Example
+
+Production
+
+LotMoveIn Part 1
+
+
+Fabric
+
+QTY: 25 TD
+
+
+and vice versa.
+
+Example
+
+Production
+
+Dispatched by Local Rules.
+
+
+Fabric
+
+QTY: 25
+
+
+and vice versa.
+
+Key Finding
+
+Many mismatches are not random.
+
+The values exist in both systems but are assigned to different HISTORDER records.
+
+This indicates:
+
+Event sequencing mismatch
+
+Fabric is retrieving the correct text but attaching it to the wrong event.
+
+13. Join Explosion Evidence
+
+The repeated patterns:
+
+COMMENT ↔ PART NUM
+COMMENT ↔ TRANSITION
+MOVE IN ↔ COMMENT
+DISPATCH ↔ COMMENT
+
+
+combined with repeated rows appearing multiple times indicate:
+
+Likely Issue
+
+One or more joins in Fabric are not sufficiently keyed.
+
+Possible causes:
+
+Joining only on LOT
+instead of
+
+LOT
+DATE_TIME
+HISTORDER
+
+or
+
+LOT
+HISTORDER
+HISTCODE
+
+
+This is causing event records to swap values.
+
+14. EMPID Validation
+Result
+EMPID mismatches = 0
+
+
+✅ Perfect reconciliation.
+
+User/person mapping is correct.
+
+15. MACHINE Validation
+Result
+Machine mismatches = 16
+
+
+Out of nearly 9000 rows.
+
+✅ Machine logic appears correct.
+
+16. Most Likely Root Causes
+Priority 1
+HIST_REC Generation
+
+Evidence:
+
+2764 mismatches
+
+
+The Fabric implementation of:
+
+PF_LOTHIST_HISTORY3
+
+
+does not produce Production-equivalent results.
+
+Priority 2
+Event Assignment Logic
+
+Evidence:
+
+COMMENT ↔ PART NUM
+COMMENT ↔ TRANSITION
+DISPATCH ↔ COMMENT
+MOVE IN ↔ COMMENT
+
+
+Records are being attached to incorrect HISTORDER/event rows.
+
+Priority 3
+Command Mapping Logic
+
+Evidence:
+
+LMVR ↔ TRAN
+LMVR ↔ MVIN
+
+
+Incorrect command derivation.
+
+Priority 4
+Additional Fabric Event Creation
+
+Evidence:
+
+CM +147
+LL +115
+
+
+Fabric generates more comment and location records.
+
+Final Assessment
+Current Reconciliation Status
+Category	ResultTime Filter	✅ Passed
+Row Counts	❌ Failed
+Distinct LOT Validation	❌ Failed
+EMPID Validation	✅ Passed
+Machine Validation	✅ Passed
+HISTCODE Coverage	✅ Mostly Passed
+Event Classification	❌ Failed
+Command Assignment	❌ Failed
+HIST_REC Logic	❌ Failed
+Business Event Sequencing	❌ Failed
+Overall Conclusion
+
+The discrepancy is not primarily missing data.
+
+The evidence shows that Fabric is:
+
+Generating additional event rows.
+Assigning events to incorrect HISTORDER records.
+Mapping TRANS and COMMAND values differently from Production.
+Producing HIST_REC text for the wrong event type.
+Loading 67 additional LOTs and 561 additional records.
+
+The main area requiring correction is the Fabric implementation of the Lot History event-generation logic, especially the logic that derives:
+
+TRANS
+COMMAND
+HIST_REC
+
+
+because nearly all major reconciliation failures originate from those three attributes.
