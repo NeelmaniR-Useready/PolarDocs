@@ -199,3 +199,55 @@ However, there are:
 481 net additional rows in Fabric
 
 The next validation step should focus on comparing records at the (LOT, DATE_TIME, HISTORDER) level to identify the exact source of the discrepancies.
+
+
+
+Query1
+
+SELECT COUNT_BIG(*) as Row_count,
+sum(cast(HISTORDER AS bigint)) AS Sum_HistOrder,
+sum(cast(OPER AS bigint)) AS Sum_Oper,
+sum(cast(Is_Person AS bigint)) AS Sum_IsPerson,
+sum(cast(IS_DUPLICATE AS bigint)) AS Sum_IsDuplicate,
+min(DATE_TIME) As Min_Date,
+max(DATE_TIME) as Max_Date
+FROM dbo.LOTHISTV;
+
+
+
+
+Preview data
+Row_count 66995173	
+Sum_HistOrder 1992377849	
+Sum_Oper 3435276063115	
+Sum_IsPerson 46140802	
+Sum_IsDuplicate 3758853	
+Min_Date 2010-04-21T14:10:00	
+Max_Date  2026-08-25T02:05:58.91
+
+
+--------------------------------------------------------------
+Query2
+
+
+SELECT COUNT_BIG(*) as Row_count,
+       sum(cast(HISTORDER AS bigint)) AS Sum_HistOrder,
+       sum(cast(OPER AS bigint)) AS Sum_Oper,
+       sum(cast(Is_Person AS bigint)) AS Sum_IsPerson,
+       sum(cast(IS_DUPLICATE AS bigint)) AS Sum_IsDuplicate
+FROM dbo.LOTHISTV
+WHERE DATE_TIME >= '2026-08-10'
+  AND DATE_TIME < '2026-08-14';
+
+
+
+Row_count 1194257	
+Sum_HistOrder 23460667	
+Sum_Oper 74095220575	
+Sum_IsPerson 721994	
+Sum_IsDuplicate 16189
+
+
+
+
+
