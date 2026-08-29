@@ -1,0 +1,5827 @@
+Production DB view –[TrainingVision].[dbo.LOTHISTV] 
+
+Fabric view –[Polar_Warehouse].[TrainingVision].[LotHistV] 
+
+ 
+
+Time stamp: DATETIME >= ‘2026-05-03 00:00:00’ AND 
+	DATE_TIME < ‘2026-05-03 01:00:00’ 
+
+ 
+
+Cell 1 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Load production (“Prod”) dataset from OneLake CSV and count rows. 
+# Data represented: All hourly historical records from the Prod source file Prod_1hourdata.csv. 
+ 
+df_Prod = spark.read.csv( 
+    "abfss://.../Files/Prod_1hourdata.csv", 
+    header=True, 
+    inferSchema=True 
+) 
+ 
+df_Prod.count() 
+ 
+
+ 
+ 
+
+Result 
+
+Text 
+
+8871 
+ 
+
+ 
+ 
+ 
+
+Cell 2 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Load Fabric dataset (data after landing into Fabric) and count rows. 
+# Data represented: All hourly historical records from the Fabric file Fabric_1hourdata.csv. 
+ 
+from pyspark.sql import functions as F 
+ 
+df_Fabric = spark.read.csv( 
+    "abfss://.../Files/Fabric_1hourdata.csv", 
+    header=True, 
+    inferSchema=True 
+) 
+ 
+df_Fabric.count() 
+ 
+
+ 
+ 
+
+Result 
+
+Text 
+
+9352 
+ 
+
+ 
+ 
+ 
+
+Cell 3 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Profile Prod dataset – distinct count of each column. 
+# Data represented: Cardinality of all columns in df_Prod (Prod source). 
+ 
+from pyspark.sql import functions as F 
+ 
+df_Prod.select( 
+    *[F.countDistinct(c).alias(c) for c in df_Prod.columns] 
+).show(vertical=True) 
+ 
+
+ 
+ 
+
+Result (distinct counts in df_Prod) 
+
+Text 
+
+LOT          | 1240 
+DATE_TIME    | 2359 
+HISTORDER    | 341 
+TRANS        | 37 
+OPER         | 382 
+MASK_LVL     | 57 
+OPERDESC     | 122 
+OPERLONGDESC | 443 
+MACHINE      | 153 
+USERNAME     | 192 
+HIST_REC     | 1262 
+HISTCODE     | 37 
+COMMAND      | 18 
+SHORTREPORT  | 2 
+VIEWFLAG     | 2 
+Is_Person    | 2 
+IS_DUPLICATE | 2 
+EMPID        | 63 
+ 
+
+ 
+ 
+ 
+
+Cell 4 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Profile Fabric dataset – distinct count of each column. 
+# Data represented: Cardinality of all columns in df_Fabric (Fabric copy). 
+ 
+from pyspark.sql import functions as F 
+ 
+df_Fabric.select( 
+    *[F.countDistinct(c).alias(c) for c in df_Fabric.columns] 
+).show(vertical=True) 
+ 
+
+ 
+ 
+
+Result (distinct counts in df_Fabric) 
+
+Text 
+
+LOT          | 1307 
+DATE_TIME    | 2538 
+HISTORDER    | 341 
+TRANS        | 37 
+OPER         | 416 
+MASK_LVL     | 62 
+OPERDESC     | 126 
+OPERLONGDESC | 483 
+MACHINE      | 156 
+USERNAME     | 200 
+HIST_REC     | 1312 
+HISTCODE     | 37 
+COMMAND      | 18 
+SHORTREPORT  | 2 
+VIEWFLAG     | 2 
+Is_Person    | 2 
+IS_DUPLICATE | 2 
+EMPID        | 64 
+ 
+
+ 
+ 
+ 
+
+Cell 5 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Compare overall row counts and overlap between Prod and Fabric. 
+# Data represented: Total rows in each dataset, fully matching rows, and rows unique to each side. 
+ 
+print("df_Prod count:", df_Prod.count()) 
+print("df_Fabric count:", df_Fabric.count()) 
+ 
+print("Common rows:", df_Prod.intersect(df_Fabric).count()) 
+print("Only in df_Prod:",  df_Prod.exceptAll(df_Fabric).count()) 
+print("Only in df_Fabric:",  df_Fabric.exceptAll(df_Prod).count()) 
+ 
+
+ 
+ 
+
+Result 
+
+Text 
+
+df_Prod count: 8871 
+df_Fabric count: 9352 
+Common rows: 8584 
+Only in df_Prod: 80 
+Only in df_Fabric: 561 
+ 
+
+ 
+ 
+ 
+
+Cell 6 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Identify Prod rows that did not land in Fabric, by LOT. 
+# Data represented: LOT values present in df_Prod but completely missing in df_Fabric (all columns). 
+ 
+prod_not_in_fabric = df_Prod.exceptAll(df_Fabric).select(F.col('LOT')) 
+ 
+print("Rows in df_Prod but not in df_Fabric:", prod_not_in_fabric.count()) 
+ 
+prod_not_in_fabric.show() 
+ 
+
+ 
+ 
+
+Result 
+
+Text 
+
+Rows in df_Prod but not in df_Fabric: 80 
++---------+ 
+|      LOT| 
++---------+ 
+|5451A0A7A| 
+|7579A1C5A| 
+|7407A027B| 
+|6362A275A| 
+|6786A1A0A| 
+|5773A1A5A| 
+|6802A164A| 
+|6786A1A0A| 
+|...      | 
++---------+ 
+only showing top 20 rows 
+ 
+
+ 
+ 
+ 
+
+Cell 7 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Identify Fabric rows that do not exist in Prod, by LOT. 
+# Data represented: LOT values present in df_Fabric but not in df_Prod. 
+ 
+fabric_not_in_prod = df_Fabric.exceptAll(df_Prod).select(F.col('LOT')) 
+ 
+print("Rows in df_Fabric but not in df_Prod:", fabric_not_in_prod.count()) 
+ 
+fabric_not_in_prod.show(truncate=False) 
+ 
+
+ 
+ 
+
+Result 
+
+Text 
+
+Rows in df_Fabric but not in df_Prod: 561 
++---------+ 
+|LOT      | 
++---------+ 
+|6339A2G5B| 
+|6515A0B6 | 
+|5781A049 | 
+|6814A022 | 
+|6814A022 | 
+|6514A2Y4 | 
+|5765A044 | 
+|6221AJV0 | 
+|...      | 
++---------+ 
+only showing top 20 rows 
+ 
+
+ 
+ 
+ 
+
+Cell 8 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Simple sanity check of row counts for both datasets. 
+# Data represented: Total rows in df_Prod and df_Fabric. 
+ 
+print("Prod:", df_Prod.count()) 
+print("Fabric:", df_Fabric.count()) 
+ 
+
+ 
+ 
+
+Result 
+
+Text 
+
+Prod: 8871 
+Fabric: 9352 
+ 
+
+ 
+ 
+ 
+
+Cell 9 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Re‑run distinct counts for both datasets side‑by‑side for validation step s2. 
+# Data represented: Column-level cardinality comparison between df_Prod and df_Fabric. 
+ 
+from pyspark.sql import functions as F 
+ 
+df_Prod.select( 
+    *[F.countDistinct(c).alias(c) for c in df_Prod.columns] 
+).show(vertical=True) 
+ 
+df_Fabric.select( 
+    *[F.countDistinct(c).alias(c) for c in df_Fabric.columns] 
+).show(vertical=True) 
+ 
+
+ 
+ 
+
+Result 
+Same distinct-count tables as in Cells 3 and 4, printed one after another. 
+
+ 
+
+Cell 10 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Focused check of distinct LOT counts in Prod vs Fabric. 
+# Data represented: Number of unique lots in each dataset. 
+ 
+df_Prod.select(F.countDistinct("LOT")).show() 
+ 
+df_Fabric.select(F.countDistinct("LOT")).show() 
+ 
+
+ 
+ 
+
+Result 
+
+Text 
+
++-------------------+ 
+|count(DISTINCT LOT)| 
++-------------------+ 
+|               1240| 
++-------------------+ 
+ 
++-------------------+ 
+|count(DISTINCT LOT)| 
++-------------------+ 
+|               1307| 
++-------------------+ 
+ 
+
+ 
+ 
+ 
+
+Cell 11 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Measure duplicate rows in both datasets (exact row duplicates). 
+# Data represented: Count of duplicate records in df_Prod and df_Fabric. 
+ 
+print( 
+    "Prod duplicates:", 
+    df_Prod.count() - df_Prod.distinct().count() 
+) 
+ 
+print( 
+    "Fabric duplicates:", 
+    df_Fabric.count() - df_Fabric.distinct().count() 
+) 
+ 
+
+ 
+ 
+
+Result 
+
+Text 
+
+Prod duplicates: 207 
+Fabric duplicates: 226 
+ 
+
+ 
+ 
+ 
+
+Cell 12 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Find keys (LOT, DATE_TIME, HISTORDER) that are duplicated inside Prod. 
+# Data represented: Key combinations in df_Prod appearing more than once, with their counts. 
+ 
+key_cols = ["LOT", "DATE_TIME", "HISTORDER"] 
+ 
+df_Prod.groupBy(*key_cols) \ 
+    .count() \ 
+    .filter("count > 1") \ 
+    .orderBy("count", ascending=False) \ 
+    .show(50, False) 
+ 
+
+ 
+ 
+
+Result 
+Top 50 duplicate key combinations, e.g.: 
+
+Text 
+
+LOT       |DATE_TIME|HISTORDER|count 
+6053A048  |42:54.0  |2        |6 
+6053A042  |16:53.6  |2        |6 
+7132A172  |28:05.9  |1        |6 
+... 
+only showing top 50 rows 
+ 
+
+ 
+ 
+ 
+
+Cell 13 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Null profiling for each column in both datasets. 
+# Data represented: Count of NULLs per column in df_Prod and df_Fabric. 
+ 
+from pyspark.sql import functions as F 
+ 
+# prod 
+df_Prod.select([ 
+    F.sum(F.col(c).isNull().cast("int")).alias(c) 
+    for c in df_Prod.columns 
+]).show(vertical=True) 
+ 
+# fabric 
+df_Fabric.select([ 
+    F.sum(F.col(c).isNull().cast("int")).alias(c) 
+    for c in df_Fabric.columns 
+]).show(vertical=True) 
+ 
+
+ 
+ 
+
+Result (null counts) 
+df_Prod: only MACHINE has 3830 nulls; others 0. 
+df_Fabric: MACHINE has 3917 nulls; others 0. 
+
+ 
+
+Cell 14 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Check time range coverage of both datasets. 
+# Data represented: Minimum and maximum DATE_TIME values in Prod and Fabric. 
+ 
+df_Prod.select( 
+    F.min("DATE_TIME"), 
+    F.max("DATE_TIME") 
+).show() 
+ 
+df_Fabric.select( 
+    F.min("DATE_TIME"), 
+    F.max("DATE_TIME") 
+).show() 
+ 
+
+ 
+ 
+
+Result 
+
+Text 
+
++--------------+--------------+ 
+|min(DATE_TIME)|max(DATE_TIME)| 
++--------------+--------------+ 
+|       00:00.3|       59:57.4| 
++--------------+--------------+ 
+ 
++--------------+--------------+ 
+|min(DATE_TIME)|max(DATE_TIME)| 
++--------------+--------------+ 
+|       00:00.3|       59:57.4| 
++--------------+--------------+ 
+ 
+
+ 
+ 
+ 
+
+Cell 15 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Try to group events by minute to see temporal distribution. 
+# Data represented: Counts by formatted DATE_TIME “minute” in Prod and Fabric. 
+# (Note: DATE_TIME isn’t a full timestamp, so format returns NULL.) 
+ 
+from pyspark.sql import functions as F 
+ 
+df_Prod.groupBy( 
+    F.date_format("DATE_TIME", "yyyy-MM-dd HH:mm").alias("minute") 
+).count().orderBy("minute").show(1000, False) 
+ 
+df_Fabric.groupBy( 
+    F.date_format("DATE_TIME", "yyyy-MM-dd HH:mm").alias("minute") 
+).count().orderBy("minute").show(1000, False) 
+ 
+
+ 
+ 
+
+Result 
+
+Text 
+
++------+-----+ 
+|minute|count| 
++------+-----+ 
+|NULL  |8871 | 
++------+-----+ 
+ 
++------+-----+ 
+|minute|count| 
++------+-----+ 
+|NULL  |9352 | 
++------+-----+ 
+ 
+
+ 
+ 
+ 
+
+Cell 16 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Compare keys (LOT, DATE_TIME, HISTORDER) between Prod and Fabric. 
+# Data represented: 
+#   - common: rows whose key exists in both 
+#   - prod_missing: keys in Prod not in Fabric 
+#   - fabric_missing: keys in Fabric not in Prod. 
+ 
+keys = ["LOT","DATE_TIME","HISTORDER"] 
+ 
+common = df_Prod.join(df_Fabric, keys, "inner") 
+ 
+print(common.count()) 
+ 
+# missing in fabric 
+prod_missing = df_Prod.join( 
+    df_Fabric, 
+    keys, 
+    "left_anti" 
+) 
+ 
+print(prod_missing.count()) 
+ 
+prod_missing.show(100, False) 
+ 
+# missing in prod 
+fabric_missing = df_Fabric.join( 
+    df_Prod, 
+    keys, 
+    "left_anti" 
+) 
+ 
+print(fabric_missing.count()) 
+ 
+fabric_missing.show(100, False) 
+ 
+
+ 
+ 
+
+Result (summary) 
+
+common.count() = number of shared keys 
+
+prod_missing.count() = number of keys only in Prod 
+
+fabric_missing.count() = number of keys only in Fabric 
+Each show(100, False) prints sample rows for these missing sets. 
+
+ 
+
+Cell 17 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Get distinct lots that are missing on each side. 
+# Data represented: 
+#   - Distinct LOTs in prod_missing 
+#   - Distinct LOTs in fabric_missing. 
+ 
+# Prod Missing 
+prod_missing.select("LOT") \ 
+.distinct() \ 
+.orderBy("LOT") \ 
+.show(1000, False) 
+ 
+# Fabric Missing 
+fabric_missing.select("LOT") \ 
+.distinct() \ 
+.orderBy("LOT") \ 
+.show(1000, False) 
+ 
+
+ 
+ 
+
+Result 
+Two distinct LOT lists (only-in-Prod and only-in-Fabric). 
+
+ 
+
+Cell 18 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Compare distribution of HISTCODE between Prod and Fabric. 
+# Data represented: Count of rows per HISTCODE in both datasets. 
+ 
+df_Prod.groupBy("HISTCODE") \ 
+.count() \ 
+.orderBy("HISTCODE") \ 
+.show(100, False) 
+ 
+df_Fabric.groupBy("HISTCODE") \ 
+.count() \ 
+.orderBy("HISTCODE") \ 
+.show(100, False) 
+ 
+
+ 
+ 
+
+Result 
+Two tables of (HISTCODE, count) for Prod and Fabric. 
+
+ 
+
+Cell 19 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Join HISTCODE distributions and compute differences. 
+# Data represented: Per-HISTCODE comparison (prod_count vs fabric_count and their difference). 
+ 
+prod_hist = df_Prod.groupBy("HISTCODE").count() \ 
+.withColumnRenamed("count","prod_count") 
+ 
+fabric_hist = df_Fabric.groupBy("HISTCODE").count() \ 
+.withColumnRenamed("count","fabric_count") 
+ 
+prod_hist.join( 
+    fabric_hist, 
+    "HISTCODE", 
+    "full" 
+).fillna(0) \ 
+.withColumn( 
+    "difference", 
+    F.col("fabric_count") - F.col("prod_count") 
+).orderBy( 
+    F.desc(F.abs(F.col("difference"))) 
+).show(100,False) 
+ 
+
+ 
+ 
+
+Result 
+Table: HISTCODE, prod_count, fabric_count, difference sorted by largest absolute difference. 
+
+ 
+
+Cell 20 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Compare OPER distribution between Prod and Fabric. 
+# Data represented: Count of rows per OPER in each dataset. 
+ 
+df_Prod.groupBy("OPER").count().show(500, False) 
+ 
+df_Fabric.groupBy("OPER").count().show(500, False) 
+ 
+
+ 
+ 
+
+Result 
+Two frequency tables: OPER vs count for Prod and Fabric. 
+
+ 
+
+Cell 21 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Compare who performed operations (EMPID usage) between Prod and Fabric. 
+# Data represented: Top EMPIDs by frequency in both datasets. 
+ 
+df_Prod.groupBy("EMPID").count().orderBy(F.desc("count")).show(100,False) 
+ 
+df_Fabric.groupBy("EMPID").count().orderBy(F.desc("count")).show(100,False) 
+ 
+
+ 
+ 
+
+Result 
+Top 100 employees (EMPID) and counts for Prod and Fabric. 
+
+ 
+
+Cell 22 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Compare machine usage between Prod and Fabric. 
+# Data represented: Counts per MACHINE in each dataset. 
+ 
+df_Prod.groupBy("MACHINE").count().show(500,False) 
+ 
+df_Fabric.groupBy("MACHINE").count().show(500,False) 
+ 
+
+ 
+ 
+
+Result 
+Two MACHINE–count distributions. 
+
+ 
+
+Cell 23 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Aggregate key metrics (rows, distinct lots, opers, users, machines, empids). 
+# Data represented: High-level summary stats of df_Prod vs df_Fabric. 
+ 
+from pyspark.sql import functions as F 
+ 
+agg_prod = df_Prod.select( 
+    F.count("*").alias("rows"), 
+    F.countDistinct("LOT").alias("lots"), 
+    F.countDistinct("OPER").alias("opers"), 
+    F.countDistinct("USERNAME").alias("users"), 
+    F.countDistinct("MACHINE").alias("machines"), 
+    F.countDistinct("EMPID").alias("empids") 
+) 
+ 
+agg_fabric = df_Fabric.select( 
+    F.count("*").alias("rows"), 
+    F.countDistinct("LOT").alias("lots"), 
+    F.countDistinct("OPER").alias("opers"), 
+    F.countDistinct("USERNAME").alias("users"), 
+    F.countDistinct("MACHINE").alias("machines"), 
+    F.countDistinct("EMPID").alias("empids") 
+) 
+ 
+agg_prod.show() 
+agg_fabric.show() 
+ 
+
+ 
+ 
+
+Result (summary) 
+Prod agg: 
+
+rows = 8871 
+
+lots = 1240, opers = 382, users = 192, machines = 153, empids = 63 
+
+Fabric agg: 
+
+rows = 9352 
+
+lots = 1307, opers = 416, users = 200, machines = 156, empids = 64 
+
+ 
+
+Cell 24 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Compare non-key attributes row-by-row on matching keys. 
+# Data represented: For rows where keys match, count mismatches for each listed column. 
+ 
+from pyspark.sql import functions as F 
+ 
+keys = ["LOT", "DATE_TIME", "HISTORDER"] 
+ 
+cols_to_compare = [ 
+    "OPER", "OPERDESC", "OPERLONGDESC", "TRANS", 
+    "HIST_REC", "MACHINE", "USERNAME", "COMMAND", "EMPID" 
+] 
+ 
+compare = df_Prod.alias("p").join(df_Fabric.alias("f"), keys) 
+ 
+result = compare.agg(*[ 
+    F.sum( 
+        F.when( 
+            F.coalesce(F.col(f"p.{c}"), F.lit("")) != 
+            F.coalesce(F.col(f"f.{c}"), F.lit("")), 
+            1 
+        ).otherwise(0) 
+    ).alias(f"{c}_MISMATCH") 
+    for c in cols_to_compare 
+]) 
+ 
+result.show(truncate=False) 
+ 
+
+ 
+ 
+
+Result 
+Single-row mismatch summary, e.g.: OPER_MISMATCH, TRANS_MISMATCH, HIST_REC_MISMATCH, etc., with counts of mismatching rows. 
+
+ 
+
+Cell 25 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Compute percentage of Prod rows that fully match Fabric rows. 
+# Data represented: Match rate = (Prod ∩ Fabric) / Prod, as a percentage. 
+ 
+common_rows = df_Prod.intersect(df_Fabric).count() 
+ 
+prod_rows = df_Prod.count() 
+ 
+match_pct = round( 
+    common_rows * 100 / prod_rows, 
+    2 
+) 
+ 
+print(match_pct) 
+ 
+
+ 
+ 
+
+Result 
+Based on earlier counts: 
+
+Text 
+
+96.76 
+ 
+
+ 
+ 
+
+(≈96.76% of Prod rows exactly match Fabric rows.) 
+
+ 
+
+Cell 26 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Detail-level check where TRANS differs between Prod and Fabric. 
+# Data represented: For matching keys, rows showing PROD_TRANS vs FABRIC_TRANS where they disagree. 
+ 
+compare.filter( 
+    F.coalesce(F.col("p.TRANS"), F.lit("")) != 
+    F.coalesce(F.col("f.TRANS"), F.lit("")) 
+).select( 
+    "LOT", 
+    "DATE_TIME", 
+    "HISTORDER", 
+    F.col("p.TRANS").alias("PROD_TRANS"), 
+    F.col("f.TRANS").alias("FABRIC_TRANS") 
+).show(200, False) 
+ 
+
+ 
+ 
+
+Result 
+Up to 200 rows where TRANS differs. Example values show differences like PART NUM vs COMMENT, LMVR vs MVIN, etc. 
+
+ 
+
+Cell 27 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Detail-level check where COMMAND differs between Prod and Fabric. 
+# Data represented: For matching keys, rows showing PROD_COMMAND vs FABRIC_COMMAND mismatches. 
+ 
+compare.filter( 
+    F.coalesce(F.col("p.COMMAND"), F.lit("")) != 
+    F.coalesce(F.col("f.COMMAND"), F.lit("")) 
+).select( 
+    "LOT", 
+    "DATE_TIME", 
+    "HISTORDER", 
+    F.col("p.COMMAND").alias("PROD_COMMAND"), 
+    F.col("f.COMMAND").alias("FABRIC_COMMAND") 
+).show(200, False) 
+ 
+
+ 
+ 
+
+Result 
+Up to 200 rows; typical differences include: 
+
+CMNT vs TRAN 
+
+LMVR vs TRAN 
+
+LMVR vs MVIN 
+
+MVIN vs LMVR, etc. 
+
+ 
+
+Cell 28 
+
+Code 
+
+Python 
+
+# Logic/Purpose: Detail-level check where HIST_REC text differs between Prod and Fabric. 
+# Data represented: For matching keys, rows with differing history text (PROD_HIST_REC vs FABRIC_HIST_REC). 
+ 
+compare.filter( 
+    F.coalesce(F.col("p.HIST_REC"), F.lit("")) != 
+    F.coalesce(F.col("f.HIST_REC"), F.lit("")) 
+).select( 
+    "LOT", 
+    "DATE_TIME", 
+    "HISTORDER", 
+    F.col("p.HIST_REC").alias("PROD_HIST_REC"), 
+    F.col("f.HIST_REC").alias("FABRIC_HIST_REC") 
+).show(200, False) 
+ 
+
+ 
+ 
+
+Result 
+Up to 200 rows with text differences such as: 
+
+status set to Inactive. vs OLD PART:T_P_8DEFCT 
+
+Placed By: (HCHIANG) vs On Future Hold (METRO) 
+
+Different parameter lines (Parameter: RHO_S, Parameter: Ox_Th_L, etc.) 
+
+Differences in quantity/lot tracker/hold text. 
+
+ 
+
+Time stamp: DATETIME >= ‘2026-08-10 04:00:00’ AND 
+	DATE_TIME < ‘2026-08-10 05:00:00’ 
+
+ 
+
+Python 
+
+# LOGIC: 
+# Load two CSV extracts (Prod and Fabric) from the Lakehouse for the given time window. 
+# Then compute and print total row counts for each dataset to see basic volume alignment. 
+ 
+df_Prod = spark.read.csv( 
+    "abfss://0af8298a-814c-4982-95a7-8f9cd2c8796c@onelake.dfs.fabric.microsoft.com/6c575156-1f48-4868-9e78-593559010765/Files/Prod-08-10(04-05).csv", 
+    header=True, 
+    inferSchema=True 
+) 
+ 
+df_Fabric = spark.read.csv( 
+    "abfss://0af8298a-814c-4982-95a7-8f9cd2c8796c@onelake.dfs.fabric.microsoft.com/6c575156-1f48-4868-9e78-593559010765/Files/Fabric-08-10(04-05).csv", 
+    header=True, 
+    inferSchema=True 
+) 
+ 
+print("=" * 80) 
+print("ROW COUNTS") 
+print("=" * 80) 
+ 
+prod_count = df_Prod.count() 
+fabric_count = df_Fabric.count() 
+ 
+print(f"Prod Rows   : {prod_count}") 
+print(f"Fabric Rows : {fabric_count}") 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+ROW COUNTS 
+================================================================================ 
+Prod Rows   : 9421 
+Fabric Rows : 9224 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# For each column in Prod and Fabric, compute the distinct count. 
+# This profiles cardinality per column and helps spot missing/extra variety between systems. 
+ 
+print("\n" + "=" * 80) 
+print("PROD DISTINCT COUNTS") 
+print("=" * 80) 
+ 
+df_Prod.select( 
+    *[ 
+        F.countDistinct(c).alias(c) 
+        for c in df_Prod.columns 
+    ] 
+).show(vertical=True, truncate=False) 
+ 
+print("\n" + "=" * 80) 
+print("FABRIC DISTINCT COUNTS") 
+print("=" * 80) 
+ 
+df_Fabric.select( 
+    *[ 
+        F.countDistinct(c).alias(c) 
+        for c in df_Fabric.columns 
+    ] 
+).show(vertical=True, truncate=False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+PROD DISTINCT COUNTS 
+================================================================================ 
+-RECORD 0------------ 
+ LOT          | 1126  
+ DATE_TIME    | 3229  
+ HISTORDER    | 140   
+ TRANS        | 48    
+ OPER         | 465   
+ MASK_LVL     | 63    
+ OPERDESC     | 159   
+ OPERLONGDESC | 563   
+ MACHINE      | 194   
+ USERNAME     | 248   
+ HIST_REC     | 1449  
+ HISTCODE     | 48    
+ COMMAND      | 22    
+ SHORTREPORT  | 2     
+ VIEWFLAG     | 2     
+ Is_Person    | 2     
+ IS_DUPLICATE | 2     
+ EMPID        | 63    
+ 
+================================================================================ 
+FABRIC DISTINCT COUNTS 
+================================================================================ 
+-RECORD 0------------ 
+ LOT          | 1104  
+ DATE_TIME    | 3229  
+ HISTORDER    | 140   
+ TRANS        | 48    
+ OPER         | 465   
+ MASK_LVL     | 63    
+ OPERDESC     | 159   
+ OPERLONGDESC | 563   
+ MACHINE      | 194   
+ USERNAME     | 248   
+ HIST_REC     | 1449  
+ HISTCODE     | 48    
+ COMMAND      | 22    
+ SHORTREPORT  | 2     
+ VIEWFLAG     | 2     
+ Is_Person    | 2     
+ IS_DUPLICATE | 2     
+ EMPID        | 63    
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Do a full row-level comparison: 
+#  - common_rows  : number of identical rows in both Prod and Fabric 
+#  - only_prod    : rows that appear only in Prod 
+#  - only_fabric  : rows that appear only in Fabric 
+# Then compute match % (common_rows vs Prod volume) and count duplicate rows in each dataset. 
+ 
+print("\n" + "=" * 80) 
+print("FULL ROW COMPARISON") 
+print("=" * 80) 
+ 
+common_rows = df_Prod.intersect(df_Fabric).count() 
+ 
+only_prod = df_Prod.exceptAll(df_Fabric) 
+only_fabric = df_Fabric.exceptAll(df_Prod) 
+ 
+only_prod_count = only_prod.count() 
+only_fabric_count = only_fabric.count() 
+ 
+print("Common rows         :", common_rows) 
+print("Only in Prod        :", only_prod_count) 
+print("Only in Fabric      :", only_fabric_count) 
+ 
+print("\n" + "=" * 80) 
+print("MATCH PERCENTAGE") 
+print("=" * 80) 
+ 
+match_pct = round(common_rows * 100 / prod_count, 2) 
+ 
+print(f"Prod Match % : {match_pct}") 
+ 
+print("\n" + "=" * 80) 
+print("DUPLICATE ROW ANALYSIS") 
+print("=" * 80) 
+ 
+prod_duplicates = prod_count - df_Prod.distinct().count() 
+fabric_duplicates = fabric_count - df_Fabric.distinct().count() 
+ 
+print("Prod duplicates   :", prod_duplicates) 
+print("Fabric duplicates :", fabric_duplicates) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+FULL ROW COMPARISON 
+================================================================================ 
+Common rows         : 9084 
+Only in Prod        : 197 
+Only in Fabric      : 0 
+ 
+================================================================================ 
+MATCH PERCENTAGE 
+================================================================================ 
+Prod Match % : 96.42 
+ 
+================================================================================ 
+DUPLICATE ROW ANALYSIS 
+================================================================================ 
+Prod duplicates   : 140 
+Fabric duplicates : 140 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Identify key-level duplicates in Prod by (LOT, DATE_TIME, HISTORDER). 
+# These represent multiple records for the same logical event/key in Prod. 
+ 
+key_cols = ["LOT", "DATE_TIME", "HISTORDER"] 
+ 
+print("\n" + "=" * 80) 
+print("DUPLICATE KEYS IN PROD") 
+print("=" * 80) 
+ 
+df_Prod.groupBy(*key_cols) \ 
+    .count() \ 
+    .filter("count > 1") \ 
+    .orderBy(F.desc("count")) \ 
+    .show(50, False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+DUPLICATE KEYS IN PROD 
+================================================================================ 
++--------+---------+---------+-----+ 
+|LOT     |DATE_TIME|HISTORDER|count| 
++--------+---------+---------+-----+ 
+|6515A0R7|02:25.5  |2        |5    | 
+|6935A1D5|21:13.8  |2        |5    | 
+|6339A2K4|24:36.4  |2        |5    | 
+|6514A4H4|40:39.4  |1        |5    | 
+|6514A4H4|40:39.7  |2        |5    | 
+|6514A3V0|43:58.6  |1        |5    | 
+|6515A0R7|02:25.5  |1        |5    | 
+|6339A2M5|36:33.7  |2        |5    | 
+|6339A2M5|36:34.0  |2        |5    | 
+|6514A3V0|43:58.4  |2        |5    | 
+|6339A2L4|48:47.8  |2        |5    | 
+|6339A2M5|36:33.9  |1        |5    | 
+|6514A3V0|43:58.5  |2        |5    | 
+|6514A3V0|43:58.4  |1        |5    | 
+|6514A4H4|40:39.4  |2        |5    | 
+|6514A4H4|40:39.5  |1        |5    | 
+|6339A2L4|48:47.8  |1        |5    | 
+|6339A2L4|48:48.0  |1        |5    | 
+|6514A3V0|43:58.5  |1        |5    | 
+|6339A2L4|48:47.9  |2        |5    | 
+|6514A453|33:53.8  |1        |5    | 
+|6339A2M5|36:33.9  |2        |5    | 
+|6514A4H4|40:39.7  |1        |5    | 
+|6339A2M5|36:33.7  |1        |5    | 
+|6339A2L4|48:48.0  |2        |5    | 
+|6935A1D5|21:13.8  |1        |5    | 
+|6515A0R7|02:25.3  |2        |5    | 
+|6514A453|33:53.8  |2        |5    | 
+|6339A2K4|24:36.4  |1        |5    | 
+|6514A3V0|43:58.6  |2        |5    | 
+|6515A0R7|02:25.3  |1        |5    | 
+|6339A2M5|36:34.0  |1        |5    | 
+|6514A4H4|40:39.5  |2        |5    | 
+|6339A2L4|48:47.9  |1        |5    | 
+|6935A1D5|21:13.9  |2        |4    | 
+|6514A472|33:53.6  |2        |4    | 
+|6515A0R7|02:25.4  |1        |4    | 
+|6515A0R7|02:25.2  |1        |4    | 
+|6339A2M5|36:33.8  |2        |4    | 
+|6515A0R7|02:25.4  |2        |4    | 
+|6339A2M5|36:33.8  |1        |4    | 
+|6514A4H4|40:39.6  |1        |4    | 
+|6514A472|33:53.6  |1        |4    | 
+|6515A0T7|29:56.4  |1        |4    | 
+|6514A3V0|43:58.7  |2        |4    | 
+|6515A0R7|02:25.2  |2        |4    | 
+|6514A3V0|43:58.7  |1        |4    | 
+|7412A0C1|55:55.1  |2        |4    | 
+|6514A3V0|43:58.8  |2        |4    | 
+|6339A2L4|48:47.7  |2        |4    | 
++--------+---------+---------+-----+ 
+only showing top 50 rows 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Compute null counts per column for Prod and Fabric. 
+# This shows completeness/nullable patterns and highlights any differences. 
+ 
+print("\n" + "=" * 80) 
+print("PROD NULL PROFILE") 
+print("=" * 80) 
+ 
+df_Prod.select([ 
+    F.sum(F.col(c).isNull().cast("int")).alias(c) 
+    for c in df_Prod.columns 
+]).show(vertical=True) 
+ 
+print("\n" + "=" * 80) 
+print("FABRIC NULL PROFILE") 
+print("=" * 80) 
+ 
+df_Fabric.select([ 
+    F.sum(F.col(c).isNull().cast("int")).alias(c) 
+    for c in df_Fabric.columns 
+]).show(vertical=True) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+PROD NULL PROFILE 
+================================================================================ 
+-RECORD 0------------ 
+ LOT          | 0     
+ DATE_TIME    | 0     
+ HISTORDER    | 0     
+ TRANS        | 0     
+ OPER         | 0     
+ MASK_LVL     | 0     
+ OPERDESC     | 0     
+ OPERLONGDESC | 0     
+ MACHINE      | 2905  
+ USERNAME     | 0     
+ HIST_REC     | 0     
+ HISTCODE     | 0     
+ COMMAND      | 0     
+ SHORTREPORT  | 0     
+ VIEWFLAG     | 0     
+ Is_Person    | 0     
+ IS_DUPLICATE | 0     
+ EMPID        | 0     
+ 
+================================================================================ 
+FABRIC NULL PROFILE 
+================================================================================ 
+-RECORD 0------------ 
+ LOT          | 0     
+ DATE_TIME    | 0     
+ HISTORDER    | 0     
+ TRANS        | 0     
+ OPER         | 0     
+ MASK_LVL     | 0     
+ OPERDESC     | 0     
+ OPERLONGDESC | 0     
+ MACHINE      | 2879  
+ USERNAME     | 0     
+ HIST_REC     | 0     
+ HISTCODE     | 0     
+ COMMAND      | 0     
+ SHORTREPORT  | 0     
+ VIEWFLAG     | 0     
+ Is_Person    | 0     
+ IS_DUPLICATE | 0     
+ EMPID        | 0     
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Compare date/time coverage across the two extracts. 
+# This validates that both Prod and Fabric span the same DATE_TIME range. 
+ 
+print("\n" + "=" * 80) 
+print("DATE RANGE COMPARISON") 
+print("=" * 80) 
+ 
+print("Prod") 
+df_Prod.select( 
+    F.min("DATE_TIME").alias("MIN_DATE_TIME"), 
+    F.max("DATE_TIME").alias("MAX_DATE_TIME") 
+).show(truncate=False) 
+ 
+print("Fabric") 
+df_Fabric.select( 
+    F.min("DATE_TIME").alias("MIN_DATE_TIME"), 
+    F.max("DATE_TIME").alias("MAX_DATE_TIME") 
+).show(truncate=False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+DATE RANGE COMPARISON 
+================================================================================ 
+Prod 
++-------------+-------------+ 
+|MIN_DATE_TIME|MAX_DATE_TIME| 
++-------------+-------------+ 
+|00:00.2      |59:58.8      | 
++-------------+-------------+ 
+ 
+Fabric 
++-------------+-------------+ 
+|MIN_DATE_TIME|MAX_DATE_TIME| 
++-------------+-------------+ 
+|00:00.2      |59:58.8      | 
++-------------+-------------+ 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# List distinct LOT values that only appear in Prod or only in Fabric 
+# based on full-row comparison (only_prod, only_fabric). 
+ 
+print("\n" + "=" * 80) 
+print("LOTS ONLY IN PROD") 
+print("=" * 80) 
+ 
+only_prod.select("LOT") \ 
+    .distinct() \ 
+    .orderBy("LOT") \ 
+    .show(1000, False) 
+ 
+print("\n" + "=" * 80) 
+print("LOTS ONLY IN FABRIC") 
+print("=" * 80) 
+ 
+only_fabric.select("LOT") \ 
+    .distinct() \ 
+    .orderBy("LOT") \ 
+    .show(1000, False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+LOTS ONLY IN PROD 
+================================================================================ 
++---------+ 
+|LOT      | 
++---------+ 
+|5245A001A| 
+|5630A001A| 
+|5630A003A| 
+|5773A1B1A| 
+|5801A009A| 
+|6098A0E1A| 
+|6121A001A| 
+|6226A081A| 
+|6352AC23D| 
+|6352AC31A| 
+|6554A0A0 | 
+|6554A0A1 | 
+|6786A191A| 
+|7417A001A| 
+|7417A002A| 
+|7423A021A| 
+|7499A057 | 
+|7499A058 | 
+|7582A001A| 
+|7610A2J5A| 
+|7851AD83A| 
+|7851AD84A| 
++---------+ 
+ 
+================================================================================ 
+LOTS ONLY IN FABRIC 
+================================================================================ 
++---+ 
+|LOT| 
++---+ 
++---+ 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Key-based comparison using (LOT, DATE_TIME, HISTORDER): 
+#  - common_keys   : keys in both Prod and Fabric 
+#  - prod_missing  : keys present in Prod but missing in Fabric 
+#  - fabric_missing: keys present in Fabric but missing in Prod 
+# Then list distinct LOTs associated with missing keys on either side. 
+ 
+print("\n" + "=" * 80) 
+print("KEY COMPARISON (LOT, DATE_TIME, HISTORDER)") 
+print("=" * 80) 
+ 
+common_keys = df_Prod.join( 
+    df_Fabric, 
+    key_cols, 
+    "inner" 
+) 
+ 
+prod_missing = df_Prod.join( 
+    df_Fabric, 
+    key_cols, 
+    "left_anti" 
+) 
+ 
+fabric_missing = df_Fabric.join( 
+    df_Prod, 
+    key_cols, 
+    "left_anti" 
+) 
+ 
+print("Common Keys      :", common_keys.count()) 
+print("Prod Missing     :", prod_missing.count()) 
+print("Fabric Missing   :", fabric_missing.count()) 
+ 
+print("\n" + "=" * 80) 
+print("DISTINCT LOTS MISSING IN FABRIC") 
+print("=" * 80) 
+ 
+prod_missing.select("LOT") \ 
+    .distinct() \ 
+    .orderBy("LOT") \ 
+    .show(1000, False) 
+ 
+print("\n" + "=" * 80) 
+print("DISTINCT LOTS MISSING IN PROD") 
+print("=" * 80) 
+ 
+fabric_missing.select("LOT") \ 
+    .distinct() \ 
+    .orderBy("LOT") \ 
+    .show(1000, False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+KEY COMPARISON (LOT, DATE_TIME, HISTORDER) 
+================================================================================ 
+Common Keys      : 12292 
+Prod Missing     : 197 
+Fabric Missing   : 0 
+ 
+================================================================================ 
+DISTINCT LOTS MISSING IN FABRIC 
+================================================================================ 
++---------+ 
+|LOT      | 
++---------+ 
+|5245A001A| 
+|5630A001A| 
+|5630A003A| 
+|5773A1B1A| 
+|5801A009A| 
+|6098A0E1A| 
+|6121A001A| 
+|6226A081A| 
+|6352AC23D| 
+|6352AC31A| 
+|6554A0A0 | 
+|6554A0A1 | 
+|6786A191A| 
+|7417A001A| 
+|7417A002A| 
+|7423A021A| 
+|7499A057 | 
+|7499A058 | 
+|7582A001A| 
+|7610A2J5A| 
+|7851AD83A| 
+|7851AD84A| 
++---------+ 
+ 
+================================================================================ 
+DISTINCT LOTS MISSING IN PROD 
+================================================================================ 
++---+ 
+|LOT| 
++---+ 
++---+ 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Compare distribution of HISTCODE between Prod and Fabric: 
+#  - prod_hist / fabric_hist : counts per HISTCODE 
+#  - difference              : fabric_count - prod_count for each code. 
+ 
+print("\n" + "=" * 80) 
+print("HISTCODE COMPARISON") 
+print("=" * 80) 
+ 
+prod_hist = ( 
+    df_Prod.groupBy("HISTCODE") 
+    .count() 
+    .withColumnRenamed("count", "prod_count") 
+) 
+ 
+fabric_hist = ( 
+    df_Fabric.groupBy("HISTCODE") 
+    .count() 
+    .withColumnRenamed("count", "fabric_count") 
+) 
+ 
+hist_compare = ( 
+    prod_hist.join( 
+        fabric_hist, 
+        "HISTCODE", 
+        "full" 
+    ) 
+    .fillna(0) 
+    .withColumn( 
+        "difference", 
+        F.col("fabric_count") - F.col("prod_count") 
+    ) 
+) 
+ 
+hist_compare.orderBy( 
+    F.desc(F.abs(F.col("difference"))) 
+).show(100, False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+HISTCODE COMPARISON 
+================================================================================ 
++--------+----------+------------+----------+ 
+|HISTCODE|prod_count|fabric_count|difference| 
++--------+----------+------------+----------+ 
+|CM      |3117      |3066        |-51       | 
+|LL      |1421      |1394        |-27       | 
+|TX      |509       |495         |-14       | 
+|WM      |349       |336         |-13       | 
+|OI      |338       |326         |-12       | 
+|SR      |405       |394         |-11       | 
+|CS      |331       |321         |-10       | 
+|IN      |385       |375         |-10       | 
+|LA      |417       |407         |-10       | 
+|MV      |412       |402         |-10       | 
+|DL      |399       |390         |-9        | 
+|RS      |226       |218         |-8        | 
+|AR      |242       |235         |-7        | 
+|UD      |80        |78          |-2        | 
+|SE      |34        |33          |-1        | 
+|SK      |38        |37          |-1        | 
+|UX      |8         |7           |-1        | 
+|AF      |3         |3           |0         | 
+|AS      |7         |7           |0         | 
+|CR      |7         |7           |0         | 
+|DD      |7         |7           |0         | 
+|DK      |160       |160         |0         | 
+|EM      |8         |8           |0         | 
+|EN      |8         |8           |0         | 
+|HC      |46        |46          |0         | 
+|HT      |7         |7           |0         | 
+|KL      |79        |79          |0         | 
+|KW      |79        |79          |0         | 
+|LC      |34        |34          |0         | 
+|OC      |3         |3           |0         | 
+|OP      |2         |2           |0         | 
+|OW      |7         |7           |0         | 
+|PT      |101       |101         |0         | 
+|R1      |1         |1           |0         | 
+|R2      |1         |1           |0         | 
+|RB      |2         |2           |0         | 
+|RE      |7         |7           |0         | 
+|RH      |2         |2           |0         | 
+|RM      |4         |4           |0         | 
+|RP      |23        |23          |0         | 
+|RT      |86        |86          |0         | 
+|RW      |1         |1           |0         | 
+|SA      |1         |1           |0         | 
+|SC      |2         |2           |0         | 
+|TC      |1         |1           |0         | 
+|TN      |7         |7           |0         | 
+|VA      |7         |7           |0         | 
+|WR      |7         |7           |0         | 
++--------+----------+------------+----------+ 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Compare distribution of OPER between Prod and Fabric. 
+# This validates that operation-level event counts are consistent. 
+ 
+print("\n" + "=" * 80) 
+print("OPER DISTRIBUTION") 
+print("=" * 80) 
+ 
+oper_compare = ( 
+    df_Prod.groupBy("OPER") 
+    .count() 
+    .withColumnRenamed("count", "prod_count") 
+    .join( 
+        df_Fabric.groupBy("OPER") 
+        .count() 
+        .withColumnRenamed("count", "fabric_count"), 
+        "OPER", 
+        "full" 
+    ) 
+    .fillna(0) 
+) 
+ 
+oper_compare.orderBy("OPER").show(500, False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+OPER DISTRIBUTION 
+================================================================================ 
++-----+----------+------------+ 
+|OPER |prod_count|fabric_count| 
++-----+----------+------------+ 
+|-100 |568       |568         | 
+|21070|192       |192         | 
+|22188|32        |32          | 
+|22236|8         |8           | 
+|22632|5         |5           | 
+|22741|4         |4           | 
+|24320|3         |3           | 
+|26620|3         |3           | 
+|30165|3         |3           | 
+|31106|2         |2           | 
+|40200|19        |19          | 
+|40203|23        |23          | 
+|40206|40        |40          | 
+|40207|13        |13          | 
+|40208|23        |23          | 
+|40211|58        |58          | 
+|40213|15        |12          | 
+|40214|14        |14          | 
+|40216|6         |6           | 
+|40217|6         |6           | 
+|40248|23        |23          | 
+|40301|4         |4           | 
+|40303|3         |3           | 
+|40305|4         |4           | 
+|40306|48        |48          | 
+|40307|4         |4           | 
+|40308|20        |20          | 
+|40310|13        |13          | 
+|40311|8         |8           | 
+|40313|10        |5           | 
+|40314|55        |55          | 
+|40316|10        |10          | 
+|40317|3         |3           | 
+|40318|74        |74          | 
+|40321|30        |30          | 
+|40322|81        |81          | 
+|40323|18        |18          | 
+|40324|20        |20          | 
+|40325|46        |46          | 
+|40327|12        |12          | 
+|40334|78        |78          | 
+|40349|9         |9           | 
+|40351|6         |6           | 
+|40352|14        |14          | 
+|40353|111       |111         | 
+|40354|22        |22          | 
+|40355|13        |13          | 
+|40357|8         |8           | 
+|40358|8         |8           | 
+|40359|3         |3           | 
+|40360|60        |60          | 
+|40363|19        |19          | 
+|40366|59        |59          | 
+|40368|38        |38          | 
+|40371|5         |5           | 
+|40403|16        |16          | 
+|40404|10        |10          | 
+|40405|3         |3           | 
+|40406|14        |14          | 
+|40407|3         |3           | 
+|40411|16        |16          | 
+|40414|3         |3           | 
+|40416|15        |15          | 
+|40420|13        |13          | 
+|40421|5         |5           | 
+|40500|16        |16          | 
+|40501|57        |54          | 
+|40502|2         |2           | 
+|40503|9         |9           | 
+|40510|22        |22          | 
+|40600|9         |9           | 
+|40601|25        |25          | 
+|40602|19        |19          | 
+|40603|6         |6           | 
+|40604|17        |15          | 
+|40606|11        |11          | 
+|40609|12        |12          | 
+|40610|5         |5           | 
+|40620|11        |11          | 
+|40621|13        |13          | 
+|40623|2         |2           | 
+|40632|32        |32          | 
+|40638|24        |12          | 
+|40640|1         |1           | 
+|45004|9         |9           | 
+|45005|1         |1           | 
+|45017|10        |10          | 
+|45022|8         |8           | 
+|49801|9         |9           | 
+|49802|1         |1           | 
+|49805|5         |5           | 
+|49806|8         |8           | 
+|49808|8         |8           | 
+|49809|7         |7           | 
+|49811|27        |27          | 
+|49812|6         |6           | 
+|49815|2         |2           | 
+|49817|2         |2           | 
+|49819|10        |10          | 
+|49820|12        |12          | 
+|49821|7         |7           | 
+|49822|17        |17          | 
+|49823|10        |10          | 
+|49825|27        |27          | 
+|49900|1         |1           | 
+|49901|22        |22          | 
+|49902|9         |9           | 
+|49904|5         |5           | 
+|49905|1         |1           | 
+|49906|38        |38          | 
+|49907|3         |3           | 
+|49908|21        |21          | 
+|49909|7         |7           | 
+|49910|24        |24          | 
+|49911|57        |57          | 
+|49914|30        |30          | 
+|49917|16        |16          | 
+|49918|3         |3           | 
+|49919|5         |5           | 
+|49920|25        |25          | 
+|49924|5         |5           | 
+|49925|1         |1           | 
+|49928|22        |22          | 
+|49929|7         |7           | 
+|49931|41        |41          | 
+|49933|9         |9           | 
+|49934|4         |4           | 
+|49942|4         |4           | 
+|49950|1         |1           | 
+|49953|1         |1           | 
+|49954|9         |9           | 
+|49960|23        |19          | 
+|49961|7         |7           | 
+|49963|1         |1           | 
+|49978|17        |17          | 
+|49982|12        |12          | 
+|49991|1         |1           | 
+|50100|43        |43          | 
+|50101|1         |1           | 
+|50102|8         |8           | 
+|50103|19        |19          | 
+|50104|27        |27          | 
+|50105|37        |37          | 
+|50106|21        |21          | 
+|50107|80        |80          | 
+|50108|4         |4           | 
+|50109|18        |18          | 
+|50110|13        |13          | 
+|50111|48        |45          | 
+|50112|22        |22          | 
+|50113|54        |54          | 
+|50115|7         |7           | 
+|50116|5         |5           | 
+|50118|9         |9           | 
+|50120|6         |6           | 
+|50121|29        |29          | 
+|50122|11        |11          | 
+|50123|5         |5           | 
+|50133|50        |50          | 
+|50141|9         |9           | 
+|50151|12        |12          | 
+|50152|13        |13          | 
+|50153|25        |25          | 
+|50201|38        |38          | 
+|50202|3         |3           | 
+|50203|29        |22          | 
+|50300|8         |8           | 
+|50301|13        |13          | 
+|50302|59        |59          | 
+|50303|36        |36          | 
+|50304|50        |50          | 
+|50306|27        |27          | 
+|50308|4         |4           | 
+|50321|11        |11          | 
+|50322|7         |7           | 
+|50323|28        |28          | 
+|50324|18        |18          | 
+|50325|20        |20          | 
+|50326|12        |12          | 
+|50327|6         |6           | 
+|50328|10        |10          | 
+|50329|31        |31          | 
+|50330|18        |18          | 
+|50331|17        |17          | 
+|50334|59        |59          | 
+|50406|19        |19          | 
+|59902|10        |10          | 
+|59903|1         |1           | 
+|59904|1         |1           | 
+|59905|23        |23          | 
+|59906|3         |3           | 
+|59909|45        |45          | 
+|59913|33        |33          | 
+|59914|33        |33          | 
+|59917|1         |1           | 
+|59918|10        |10          | 
+|60100|14        |14          | 
+|60101|17        |17          | 
+|60102|47        |47          | 
+|60103|44        |44          | 
+|60104|24        |24          | 
+|60105|26        |26          | 
+|60106|18        |18          | 
+|60108|5         |5           | 
+|60109|20        |10          | 
+|60110|32        |32          | 
+|60111|68        |68          | 
+|60112|6         |6           | 
+|60113|1         |1           | 
+|60114|17        |17          | 
+|60115|21        |21          | 
+|60116|39        |39          | 
+|60120|38        |38          | 
+|60122|5         |5           | 
+|62941|94        |94          | 
+|62942|8         |8           | 
+|64321|5         |5           | 
+|64381|8         |8           | 
+|70100|50        |46          | 
+|70102|1         |1           | 
+|70103|53        |42          | 
+|70104|51        |51          | 
+|70105|12        |12          | 
+|70106|37        |37          | 
+|70107|103       |100         | 
+|70108|10        |10          | 
+|70109|51        |40          | 
+|70110|15        |15          | 
+|70111|6         |6           | 
+|70112|12        |12          | 
+|70113|5         |5           | 
+|70114|39        |39          | 
+|70115|9         |9           | 
+|70116|9         |9           | 
+|70117|3         |3           | 
+|70118|24        |17          | 
+|70119|15        |15          | 
+|70120|14        |14          | 
+|70122|40        |40          | 
+|70124|16        |16          | 
+|70125|31        |31          | 
+|70127|18        |18          | 
+|70128|3         |3           | 
+|70130|18        |18          | 
+|70131|13        |13          | 
+|70132|15        |15          | 
+|70134|6         |6           | 
+|70137|7         |7           | 
+|70138|12        |12          | 
+|70139|54        |54          | 
+|70143|8         |8           | 
+|70190|31        |31          | 
+|70200|1         |1           | 
+|70202|1         |1           | 
+|70203|44        |44          | 
+|70204|1         |1           | 
+|70205|26        |26          | 
+|70206|12        |12          | 
+|70209|7         |7           | 
+|70210|6         |6           | 
+|70212|4         |4           | 
+|70213|31        |31          | 
+|70214|17        |17          | 
+|70216|14        |14          | 
+|70218|18        |18          | 
+|70219|9         |9           | 
+|70220|33        |33          | 
+|70221|28        |28          | 
+|70222|6         |6           | 
+|70223|20        |20          | 
+|70224|16        |16          | 
+|70226|11        |11          | 
+|70227|3         |3           | 
+|70230|12        |12          | 
+|70231|44        |44          | 
+|70232|2         |2           | 
+|70234|12        |6           | 
+|70239|18        |9           | 
+|70249|17        |17          | 
+|70300|4         |4           | 
+|70301|27        |27          | 
+|70302|4         |4           | 
+|70303|14        |14          | 
+|70304|19        |19          | 
+|70306|1         |1           | 
+|70308|4         |4           | 
+|70310|2         |2           | 
+|70400|7         |7           | 
+|70401|26        |26          | 
+|70403|13        |13          | 
+|70404|29        |29          | 
+|70405|19        |19          | 
+|70406|31        |31          | 
+|70407|21        |21          | 
+|70408|9         |9           | 
+|70411|3         |3           | 
+|70412|4         |4           | 
+|70501|5         |5           | 
+|70502|15        |15          | 
+|70503|23        |19          | 
+|70504|36        |36          | 
+|70620|4         |4           | 
+|70700|12        |12          | 
+|70701|12        |12          | 
+|70702|14        |14          | 
+|70703|7         |7           | 
+|70704|31        |31          | 
+|70900|6         |6           | 
+|70950|5         |5           | 
+|71000|14        |14          | 
+|71001|117       |117         | 
+|71002|13        |13          | 
+|71003|10        |10          | 
+|71004|8         |8           | 
+|71005|30        |30          | 
+|71006|6         |6           | 
+|71007|4         |2           | 
+|71009|5         |5           | 
+|71013|2         |2           | 
+|71114|3         |3           | 
+|71115|3         |3           | 
+|71116|19        |19          | 
+|71117|21        |21          | 
+|71121|4         |4           | 
+|71414|6         |6           | 
+|71416|8         |8           | 
+|71425|4         |2           | 
+|71700|23        |23          | 
+|75000|9         |9           | 
+|75008|7         |7           | 
+|75016|10        |10          | 
+|75017|8         |8           | 
+|75028|8         |8           | 
+|79801|9         |9           | 
+|79803|7         |7           | 
+|79804|10        |10          | 
+|79805|15        |15          | 
+|79808|19        |19          | 
+|79809|15        |15          | 
+|79810|23        |23          | 
+|79811|8         |8           | 
+|79812|15        |15          | 
+|79813|7         |7           | 
+|79814|6         |6           | 
+|79816|7         |7           | 
+|79819|2         |2           | 
+|79821|10        |10          | 
+|79829|3         |3           | 
+|79831|56        |44          | 
+|79901|30        |30          | 
+|79902|6         |6           | 
+|79903|10        |10          | 
+|79904|9         |9           | 
+|79905|3         |3           | 
+|79906|6         |6           | 
+|79907|96        |70          | 
+|79908|41        |21          | 
+|79910|23        |23          | 
+|79911|9         |9           | 
+|79912|6         |6           | 
+|79913|10        |10          | 
+|79914|5         |5           | 
+|79915|17        |17          | 
+|79917|1         |1           | 
+|79919|1         |1           | 
+|79927|5         |5           | 
+|79928|5         |5           | 
+|79929|1         |1           | 
+|79932|2         |1           | 
+|79944|1         |1           | 
+|79999|4         |4           | 
+|80100|12        |12          | 
+|80101|50        |50          | 
+|80102|21        |21          | 
+|80105|13        |13          | 
+|80221|39        |35          | 
+|80222|25        |18          | 
+|80223|4         |4           | 
+|80231|16        |16          | 
+|80242|44        |44          | 
+|80252|18        |18          | 
+|80255|39        |39          | 
+|80265|24        |24          | 
+|80270|2         |2           | 
+|80300|26        |26          | 
+|80301|8         |8           | 
+|80302|8         |8           | 
+|80304|5         |5           | 
+|80305|4         |4           | 
+|80306|4         |4           | 
+|80307|3         |3           | 
+|80400|60        |60          | 
+|80401|16        |16          | 
+|80402|38        |38          | 
+|80403|20        |20          | 
+|80404|37        |37          | 
+|80405|82        |69          | 
+|80406|36        |36          | 
+|80407|86        |86          | 
+|80408|5         |5           | 
+|80410|73        |71          | 
+|80411|9         |9           | 
+|80412|11        |11          | 
+|80413|4         |4           | 
+|80414|2         |2           | 
+|80415|4         |4           | 
+|80422|6         |6           | 
+|80636|9         |9           | 
+|89707|7         |7           | 
+|89710|4         |4           | 
+|89712|5         |5           | 
+|89901|1         |1           | 
+|89902|7         |7           | 
+|89903|4         |4           | 
+|89904|1         |1           | 
+|89905|1         |1           | 
+|89906|8         |8           | 
+|89908|1         |1           | 
+|89910|1         |1           | 
+|89913|3         |3           | 
+|89914|1         |1           | 
+|89917|5         |5           | 
+|89919|30        |30          | 
+|89921|10        |10          | 
+|89927|3         |3           | 
+|90100|19        |19          | 
+|90106|3         |3           | 
+|90400|26        |26          | 
+|90404|4         |4           | 
+|90405|12        |12          | 
+|90500|12        |12          | 
+|90601|6         |6           | 
+|90602|24        |24          | 
+|90603|26        |26          | 
+|90611|22        |22          | 
+|90612|8         |8           | 
+|90622|2         |2           | 
+|90631|5         |5           | 
+|90640|31        |27          | 
+|90641|5         |5           | 
+|90642|4         |4           | 
+|90650|3         |3           | 
+|90652|4         |4           | 
+|90701|3         |3           | 
+|92150|36        |36          | 
+|92151|38        |38          | 
+|92152|18        |18          | 
+|92154|10        |10          | 
+|92156|20        |20          | 
+|92159|1         |1           | 
+|92160|15        |15          | 
+|94008|1         |1           | 
+|94040|6         |6           | 
+|94941|178       |178         | 
+|94942|72        |72          | 
+|94952|52        |52          | 
+|94954|11        |11          | 
+|94956|8         |8           | 
+|94959|48        |48          | 
+|94966|3         |3           | 
+|94990|1         |1           | 
+|94997|4         |4           | 
+|95050|1         |1           | 
+|95051|19        |19          | 
+|99999|448       |448         | 
++-----+----------+------------+ 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Compare EMPID distribution between Prod and Fabric. 
+# This checks that events are assigned to employees in similar proportions. 
+ 
+print("\n" + "=" * 80) 
+print("EMPID DISTRIBUTION") 
+print("=" * 80) 
+ 
+empid_compare = ( 
+    df_Prod.groupBy("EMPID") 
+    .count() 
+    .withColumnRenamed("count", "prod_count") 
+    .join( 
+        df_Fabric.groupBy("EMPID") 
+        .count() 
+        .withColumnRenamed("count", "fabric_count"), 
+        "EMPID", 
+        "full" 
+    ) 
+    .fillna(0) 
+) 
+ 
+empid_compare.orderBy( 
+    F.desc("fabric_count") 
+).show(100, False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+EMPID DISTRIBUTION 
+================================================================================ 
++-----+----------+------------+ 
+|EMPID|prod_count|fabric_count| 
++-----+----------+------------+ 
+|SYSTM|2203      |2155        | 
+|0    |2055      |1991        | 
+|5881 |976       |976         | 
+|99999|484       |482         | 
+|5234 |413       |413         | 
+|5973 |182       |172         | 
+|14105|164       |158         | 
+|5980 |139       |139         | 
+|8198 |136       |136         | 
+|5661 |127       |125         | 
+|4502 |124       |118         | 
+|5241 |116       |116         | 
+|5736 |100       |100         | 
+|5688 |99        |99          | 
+|6128 |98        |98          | 
+|6020 |95        |88          | 
+|5746 |87        |87          | 
+|5840 |91        |86          | 
+|8038 |83        |83          | 
+|5717 |77        |77          | 
+|3879 |75        |75          | 
+|14074|77        |73          | 
+|5887 |70        |70          | 
+|14030|72        |68          | 
+|5823 |72        |68          | 
+|14102|69        |67          | 
+|5982 |65        |65          | 
+|6134 |70        |63          | 
+|6116 |71        |62          | 
+|14073|65        |60          | 
+|5683 |63        |59          | 
+|14019|54        |52          | 
+|14038|50        |50          | 
+|5532 |49        |49          | 
+|14018|47        |47          | 
+|5880 |51        |45          | 
+|5927 |44        |44          | 
+|4403 |43        |43          | 
+|14046|42        |42          | 
+|5406 |42        |42          | 
+|2895 |38        |38          | 
+|8263 |37        |37          | 
+|2854 |35        |35          | 
+|4475 |33        |33          | 
+|5889 |30        |30          | 
+|5550 |29        |29          | 
+|4594 |27        |27          | 
+|5870 |22        |22          | 
+|5338 |18        |18          | 
+|5930 |15        |15          | 
+|5972 |14        |14          | 
+|4602 |13        |13          | 
+|3918 |10        |10          | 
+|5260 |10        |10          | 
+|3440 |9         |9           | 
+|3742 |9         |9           | 
+|5742 |8         |8           | 
+|6155 |7         |7           | 
+|6066 |6         |6           | 
+|6008 |4         |4           | 
+|N2152|3         |3           | 
+|4660 |2         |2           | 
+|6175 |2         |2           | 
++-----+----------+------------+ 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Compare MACHINE distribution between Prod and Fabric. 
+# This checks whether each tool/machine sees comparable volume in both datasets. 
+ 
+print("\n" + "=" * 80) 
+print("MACHINE DISTRIBUTION") 
+print("=" * 80) 
+ 
+machine_compare = ( 
+    df_Prod.groupBy("MACHINE") 
+    .count() 
+    .withColumnRenamed("count", "prod_count") 
+    .join( 
+        df_Fabric.groupBy("MACHINE") 
+        .count() 
+        .withColumnRenamed("count", "fabric_count"), 
+        "MACHINE", 
+        "full" 
+    ) 
+    .fillna(0) 
+) 
+ 
+machine_compare.orderBy("MACHINE").show(500, False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+MACHINE DISTRIBUTION 
+================================================================================ 
++--------------+----------+------------+ 
+|MACHINE       |prod_count|fabric_count| 
++--------------+----------+------------+ 
+|NULL          |2905      |0           | 
+|NULL          |0         |2879        | 
+|ALPHA307      |7         |7           | 
+|ALPHA311      |21        |21          | 
+|ALPHA312      |4         |4           | 
+|ALPHA314      |14        |14          | 
+|ALPHA804      |6         |6           | 
+|ALPHA805      |6         |6           | 
+|AME10         |13        |13          | 
+|AME11         |10        |10          | 
+|AME15         |42        |42          | 
+|AME20         |15        |15          | 
+|AME21         |9         |9           | 
+|AME22         |11        |11          | 
+|AME309        |6         |6           | 
+|AME312        |15        |15          | 
+|AME313        |30        |30          | 
+|AME314        |15        |15          | 
+|AME317        |10        |10          | 
+|AME324        |11        |11          | 
+|AME325        |26        |26          | 
+|AME326        |19        |19          | 
+|AME327        |7         |7           | 
+|AME328        |24        |20          | 
+|AME329        |9         |9           | 
+|ASML100-301   |28        |28          | 
+|ASML100-303   |4         |4           | 
+|ASML100-304   |17        |17          | 
+|ASML100-305   |21        |21          | 
+|ASML100-308   |31        |27          | 
+|ASML100-318   |15        |15          | 
+|ASML100-319   |15        |15          | 
+|ATLAS305      |12        |12          | 
+|BAGSEALER302  |12        |12          | 
+|CDSEM304      |2         |2           | 
+|CMP2          |6         |6           | 
+|CMP4          |19        |19          | 
+|CMP5          |19        |19          | 
+|ECLIPSE308    |8         |8           | 
+|ELIPS10       |61        |61          | 
+|ELIPS311      |149       |149         | 
+|ENDURA211     |23        |23          | 
+|ENDURA3       |13        |9           | 
+|ENDURA306     |36        |36          | 
+|ENDURA307     |4         |4           | 
+|ENDURA308     |47        |47          | 
+|ENDURA4       |2         |2           | 
+|ENDURA5       |26        |19          | 
+|EPI7          |4         |4           | 
+|EPI8          |7         |7           | 
+|FAAST301      |3         |3           | 
+|FTIR1         |6         |6           | 
+|FUSION302     |26        |26          | 
+|FUSION303     |11        |11          | 
+|FUSION304     |4         |4           | 
+|FUSION305     |9         |9           | 
+|FUSION306     |8         |8           | 
+|FUSION307     |16        |16          | 
+|FUSION310     |8         |5           | 
+|FUSION311     |4         |4           | 
+|GSD1          |9         |9           | 
+|GSD2          |19        |19          | 
+|GSD3          |30        |30          | 
+|GSD306        |16        |16          | 
+|GSD4          |27        |27          | 
+|GSD7          |53        |43          | 
+|HD302         |4         |4           | 
+|HDP301        |21        |19          | 
+|HE301         |50        |50          | 
+|INSP14        |12        |12          | 
+|INSP311       |129       |117         | 
+|INSP312       |90        |90          | 
+|INSP315       |116       |116         | 
+|IVS303        |44        |42          | 
+|IVS304        |65        |61          | 
+|IVS305        |90        |73          | 
+|KEITHLY1      |14        |14          | 
+|KEITHLY4      |2         |2           | 
+|KLA8930-301   |3         |3           | 
+|KLA8935-302   |4         |4           | 
+|KLARITY_DEFECT|43        |43          | 
+|KLASEM301     |201       |183         | 
+|KLASEM302     |184       |184         | 
+|KLASP1-301    |55        |55          | 
+|KLASP1-302    |89        |89          | 
+|LINK-15       |109       |109         | 
+|LINK-16       |88        |88          | 
+|LINK-17       |93        |93          | 
+|LINK-304      |129       |129         | 
+|LINK-305      |107       |107         | 
+|LINK-307      |39        |39          | 
+|LINK-308      |58        |58          | 
+|LINK-309      |1         |1           | 
+|LINK-310      |21        |21          | 
+|LINK-311      |34        |34          | 
+|LINK-312      |41        |41          | 
+|LINK-313      |18        |15          | 
+|LINK-320      |57        |57          | 
+|LINK-321      |54        |54          | 
+|MERCURY1      |16        |16          | 
+|MERCURY10     |87        |87          | 
+|MERCURY3      |96        |96          | 
+|MERCURY302    |112       |112         | 
+|MERCURY306    |67        |64          | 
+|MERCURY311    |52        |52          | 
+|MERCURY312    |72        |70          | 
+|MERCURY313    |16        |16          | 
+|MERCURY314    |43        |43          | 
+|MERCURY315    |68        |68          | 
+|MERCURY316    |51        |51          | 
+|MERCURY317    |110       |108         | 
+|MERCURY318    |72        |59          | 
+|MERCURY5      |54        |54          | 
+|MERCURY8      |54        |54          | 
+|MRL15.2       |6         |6           | 
+|MRL15.3       |22        |22          | 
+|MRL18.2       |4         |4           | 
+|MRL22.3       |4         |4           | 
+|MRL323.2      |1         |1           | 
+|MRL324.2      |9         |9           | 
+|MRL325.3      |71        |71          | 
+|MRL326.4      |32        |32          | 
+|MRL327.1      |153       |153         | 
+|NK301         |27        |27          | 
+|NOVEL22       |36        |36          | 
+|NOVEL23       |73        |73          | 
+|NOVEL24       |6         |6           | 
+|NOVEL307      |30        |30          | 
+|NOVEL309      |8         |8           | 
+|NOVEL311      |20        |20          | 
+|NOVEL312      |94        |94          | 
+|NOVEL313      |27        |27          | 
+|NOVEL314      |32        |19          | 
+|NOVEL315      |42        |42          | 
+|NOVEL316      |22        |22          | 
+|NOVEL321      |28        |28          | 
+|NOVEL325      |18        |18          | 
+|NOVEL327      |24        |24          | 
+|OMNIMAP       |12        |12          | 
+|OVEN306       |14        |14          | 
+|PEP1          |37        |37          | 
+|PEP3          |11        |11          | 
+|PEP302        |15        |15          | 
+|PEP309        |42        |36          | 
+|PEP310        |32        |32          | 
+|PEP311        |44        |44          | 
+|PEP312        |18        |18          | 
+|PEP313        |29        |29          | 
+|PEP315        |31        |31          | 
+|PEP5          |44        |35          | 
+|PEP6          |49        |49          | 
+|PEP7          |21        |21          | 
+|PEP8          |16        |16          | 
+|RESMAP302     |13        |13          | 
+|RTA301        |9         |9           | 
+|RTA303        |33        |33          | 
+|RTA305        |2         |2           | 
+|RTA306        |12        |12          | 
+|RTA309        |36        |29          | 
+|RTA311        |11        |11          | 
+|RTA4          |9         |9           | 
+|SCRIBE303     |19        |19          | 
+|SCRUB302      |62        |50          | 
+|SCRUB303      |45        |45          | 
+|SCRUB306      |68        |66          | 
+|SWAP_BEOL     |7         |6           | 
+|SWAP_FEOL     |7         |7           | 
+|TEL303        |37        |37          | 
+|TEL305        |20        |20          | 
+|TEL307        |44        |44          | 
+|TEL310        |35        |35          | 
+|UV1280-101    |29        |29          | 
+|UV1280-102    |4         |4           | 
+|UV1280-103    |6         |6           | 
+|VAF1          |9         |9           | 
+|VDF2          |6         |6           | 
+|VDF6          |6         |6           | 
+|VIISTA301     |80        |80          | 
+|VIISTA302     |87        |87          | 
+|VTR1          |7         |7           | 
+|VTR304        |4         |4           | 
+|VTR306        |28        |28          | 
+|WAFSORT3      |16        |16          | 
+|WAFSORT302    |27        |27          | 
+|WAFSORT304    |54        |54          | 
+|WB102         |34        |34          | 
+|WB301         |58        |58          | 
+|WB303         |8         |8           | 
+|WB304         |19        |19          | 
+|WB305         |30        |19          | 
+|WB389-L       |15        |15          | 
+|WB81          |1         |1           | 
+|WB84-Y        |13        |13          | 
+|WB84-Z        |13        |13          | 
+|WB85          |50        |50          | 
+|WB91          |44        |44          | 
++--------------+----------+------------+ 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Compute overall summary metrics for each dataset: 
+#  - rows, distinct lots, distinct operations, users, machines, and empids. 
+ 
+print("\n" + "=" * 80) 
+print("SUMMARY METRICS") 
+print("=" * 80) 
+ 
+agg_prod = df_Prod.select( 
+    F.count("*").alias("rows"), 
+    F.countDistinct("LOT").alias("lots"), 
+    F.countDistinct("OPER").alias("opers"), 
+    F.countDistinct("USERNAME").alias("users"), 
+    F.countDistinct("MACHINE").alias("machines"), 
+    F.countDistinct("EMPID").alias("empids") 
+) 
+ 
+agg_fabric = df_Fabric.select( 
+    F.count("*").alias("rows"), 
+    F.countDistinct("LOT").alias("lots"), 
+    F.countDistinct("OPER").alias("opers"), 
+    F.countDistinct("USERNAME").alias("users"), 
+    F.countDistinct("MACHINE").alias("machines"), 
+    F.countDistinct("EMPID").alias("empids") 
+) 
+ 
+print("Prod Summary") 
+agg_prod.show(truncate=False) 
+ 
+print("Fabric Summary") 
+agg_fabric.show(truncate=False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+SUMMARY METRICS 
+================================================================================ 
+Prod Summary 
++----+----+-----+-----+--------+------+ 
+|rows|lots|opers|users|machines|empids| 
++----+----+-----+-----+--------+------+ 
+|9421|1126|465  |248  |194     |63    | 
++----+----+-----+-----+--------+------+ 
+ 
+Fabric Summary 
++----+----+-----+-----+--------+------+ 
+|rows|lots|opers|users|machines|empids| 
++----+----+-----+-----+--------+------+ 
+|9224|1104|465  |248  |194     |63    | 
++----+----+-----+-----+--------+------+ 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# On the set of rows matched by key (LOT, DATE_TIME, HISTORDER), 
+# count how many rows have mismatched values in selected attributes: 
+#  OPER, descriptions, TRANS, HIST_REC, MACHINE, USERNAME, COMMAND, EMPID. 
+ 
+print("\n" + "=" * 80) 
+print("ATTRIBUTE MISMATCH ANALYSIS") 
+print("=" * 80) 
+ 
+cols_to_compare = [ 
+    "OPER", 
+    "OPERDESC", 
+    "OPERLONGDESC", 
+    "TRANS", 
+    "HIST_REC", 
+    "MACHINE", 
+    "USERNAME", 
+    "COMMAND", 
+    "EMPID" 
+] 
+ 
+compare = ( 
+    df_Prod.alias("p") 
+    .join( 
+        df_Fabric.alias("f"), 
+        key_cols 
+    ) 
+) 
+ 
+mismatch_summary = compare.agg(*[ 
+    F.sum( 
+        F.when( 
+            F.coalesce(F.col(f"p.{c}"), F.lit("")) != 
+            F.coalesce(F.col(f"f.{c}"), F.lit("")), 
+            1 
+        ).otherwise(0) 
+    ).alias(f"{c}_MISMATCH") 
+    for c in cols_to_compare 
+]) 
+ 
+mismatch_summary.show(truncate=False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+ATTRIBUTE MISMATCH ANALYSIS 
+================================================================================ 
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+ 
+|OPER_MISMATCH|OPERDESC_MISMATCH|OPERLONGDESC_MISMATCH|TRANS_MISMATCH|HIST_REC_MISMATCH|MACHINE_MISMATCH|USERNAME_MISMATCH|COMMAND_MISMATCH|EMPID_MISMATCH| 
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+ 
+|0            |0                |0                    |1746          |2500             |26              |54               |322             |0             | 
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+ 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Show a detailed sample (up to 200 rows) where TRANS differs between Prod and Fabric, 
+# along with the key fields and both TRANS values. 
+ 
+print("\n" + "=" * 80) 
+print("TRANS MISMATCH SAMPLE") 
+print("=" * 80) 
+ 
+compare.filter( 
+    F.coalesce(F.col("p.TRANS"), F.lit("")) != 
+    F.coalesce(F.col("f.TRANS"), F.lit("")) 
+).select( 
+    "LOT", 
+    "DATE_TIME", 
+    "HISTORDER", 
+    F.col("p.TRANS").alias("PROD_TRANS"), 
+    F.col("f.TRANS").alias("FABRIC_TRANS") 
+).show(200, False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+TRANS MISMATCH SAMPLE 
+================================================================================ 
++----------+---------+---------+----------+------------+ 
+|LOT       |DATE_TIME|HISTORDER|PROD_TRANS|FABRIC_TRANS| 
++----------+---------+---------+----------+------------+ 
+|5245A001  |00:00.2  |1        |WAIT MVOU |COMMENT     | 
+|5245A001  |00:00.2  |1        |COMMENT   |WAIT MVOU   | 
+|6352ACB4B |00:00.4  |1        |WAIT MVOU |COMMENT     | 
+|6352ACB4B |00:00.4  |1        |COMMENT   |WAIT MVOU   | 
+|6352ACA3  |00:00.6  |1        |WAIT MVOU |COMMENT     | 
+|6352ACA3  |00:00.6  |1        |COMMENT   |WAIT MVOU   | 
+|7745A1F2  |00:00.8  |1        |WAIT MVOU |COMMENT     | 
+|7745A1F2  |00:00.8  |1        |COMMENT   |WAIT MVOU   | 
+|5773A1C6  |00:00.9  |1        |DISPATCH  |COMMENT     | 
+|5773A1C6  |00:00.9  |1        |COMMENT   |DISPATCH    | 
+|7862A072  |00:03.2  |1        |WAIT MVOU |COMMENT     | 
+|7862A072  |00:03.2  |1        |COMMENT   |WAIT MVOU   | 
+|5499A028  |00:03.6  |1        |WAIT MVOU |COMMENT     | 
+|5499A028  |00:03.6  |1        |COMMENT   |WAIT MVOU   | 
+|6352AC98  |00:04.0  |1        |WAIT MVOU |COMMENT     | 
+|6352AC98  |00:04.0  |1        |COMMENT   |WAIT MVOU   | 
+|6352AC71  |00:04.4  |1        |WAIT MVOU |COMMENT     | 
+|6352AC71  |00:04.4  |1        |COMMENT   |WAIT MVOU   | 
+|7579A1D2  |00:05.8  |1        |DISPATCH  |COMMENT     | 
+|7579A1D2  |00:05.8  |1        |COMMENT   |DISPATCH    | 
+|6541T14146|00:32.3  |1        |TRANSITION|COMMENT     | 
+|6541T14146|00:32.3  |1        |COMMENT   |TRANSITION  | 
+|6541T14146|00:34.1  |1        |MOVE IN   |COMMENT     | 
+|6541T14146|00:34.1  |1        |COMMENT   |MOVE IN     | 
+|7677A036  |00:37.8  |1        |TRANSITION|COMMENT     | 
+|7677A036  |00:37.8  |1        |COMMENT   |TRANSITION  | 
+|7677A036  |00:39.0  |1        |MOVE IN   |COMMENT     | 
+|7677A036  |00:39.0  |1        |COMMENT   |MOVE IN     | 
+|6814A040  |00:52.4  |1        |SUGG RECIP|MOVE IN     | 
+|6814A040  |00:52.4  |1        |MOVE IN   |SUGG RECIP  | 
+|6814A042  |00:52.6  |1        |SUGG RECIP|MOVE IN     | 
+|6814A042  |00:52.6  |1        |MOVE IN   |SUGG RECIP  | 
+|7738A016  |00:52.8  |1        |HOLD CODE |REPOSITION  | 
+|7738A016  |00:52.8  |1        |HOLD CODE |COMMENT     | 
+|5941A0Y6  |00:52.8  |1        |SUGG RECIP|MOVE IN     | 
+|5941A0Y6  |00:52.8  |1        |MOVE IN   |SUGG RECIP  | 
+|7738A016  |00:52.8  |1        |REPOSITION|HOLD CODE   | 
+|7738A016  |00:52.8  |1        |REPOSITION|COMMENT     | 
+|7738A016  |00:52.8  |1        |COMMENT   |HOLD CODE   | 
+|7738A016  |00:52.8  |1        |COMMENT   |REPOSITION  | 
+|7423A021  |00:56.2  |1        |WAIT MVOU |COMMENT     | 
+|7423A021  |00:56.2  |1        |COMMENT   |WAIT MVOU   | 
+|5703A044  |01:26.6  |1        |TRANSITION|COMMENT     | 
+|5703A044  |01:26.6  |1        |COMMENT   |TRANSITION  | 
+|5703A044  |01:40.5  |1        |UNTRANSITN|COMMENT     | 
+|5703A044  |01:40.5  |1        |COMMENT   |UNTRANSITN  | 
+|6541T14146|01:46.1  |1        |TRANSITION|COMMENT     | 
+|6541T14146|01:46.1  |1        |COMMENT   |TRANSITION  | 
+|6541T14146|01:48.0  |1        |SUGG RECIP|MOVE IN     | 
+|6541T14146|01:48.0  |1        |SUGG RECIP|COMMENT     | 
+|6541T14146|01:48.0  |1        |MOVE IN   |COMMENT     | 
+|6541T14146|01:48.0  |1        |MOVE IN   |SUGG RECIP  | 
+|6541T14146|01:48.0  |1        |COMMENT   |MOVE IN     | 
+|6541T14146|01:48.0  |1        |COMMENT   |SUGG RECIP  | 
+|6515A0S6  |02:08.2  |1        |DISPATCH  |COMMENT     | 
+|6515A0S6  |02:08.2  |1        |COMMENT   |DISPATCH    | 
+|5941A113  |02:08.5  |1        |DISPATCH  |COMMENT     | 
+|5941A113  |02:08.5  |1        |COMMENT   |DISPATCH    | 
+|7421A146  |02:08.8  |1        |DISPATCH  |COMMENT     | 
+|7421A146  |02:08.8  |1        |COMMENT   |DISPATCH    | 
+|5941A0W5  |02:09.0  |1        |DISPATCH  |COMMENT     | 
+|5941A0W5  |02:09.0  |1        |COMMENT   |DISPATCH    | 
+|6339A2L4  |02:10.3  |1        |DISPATCH  |COMMENT     | 
+|6339A2L4  |02:10.3  |1        |COMMENT   |DISPATCH    | 
+|7499A036  |02:12.4  |1        |DISPATCH  |COMMENT     | 
+|7499A036  |02:12.4  |1        |COMMENT   |DISPATCH    | 
+|7862A063  |02:18.3  |1        |DISPATCH  |COMMENT     | 
+|7862A063  |02:18.3  |1        |COMMENT   |DISPATCH    | 
+|7060T4L0  |02:24.1  |1        |DISPATCH  |COMMENT     | 
+|7060T4L0  |02:24.1  |1        |COMMENT   |DISPATCH    | 
+|5941A0W8  |02:33.3  |1        |DISPATCH  |COMMENT     | 
+|5941A0W8  |02:33.3  |1        |COMMENT   |DISPATCH    | 
+|5703A044  |02:35.4  |1        |TRANSITION|COMMENT     | 
+|5703A044  |02:35.4  |1        |COMMENT   |TRANSITION  | 
+|7584A018  |02:39.6  |1        |WAIT MVOU |COMMENT     | 
+|7584A018  |02:39.6  |1        |COMMENT   |WAIT MVOU   | 
+|6352ACB3  |02:39.8  |1        |WAIT MVOU |COMMENT     | 
+|6352ACB3  |02:39.8  |1        |COMMENT   |WAIT MVOU   | 
+|6352AC87  |02:40.0  |1        |WAIT MVOU |COMMENT     | 
+|6352AC87  |02:40.0  |1        |COMMENT   |WAIT MVOU   | 
+|7412A0F6  |02:40.2  |1        |WAIT MVOU |COMMENT     | 
+|7412A0F6  |02:40.2  |1        |COMMENT   |WAIT MVOU   | 
+|6786A180  |02:40.9  |1        |DISPATCH  |COMMENT     | 
+|6786A180  |02:40.9  |1        |COMMENT   |DISPATCH    | 
+|6814A035  |02:42.3  |1        |DISPATCH  |COMMENT     | 
+|6814A035  |02:42.3  |1        |COMMENT   |DISPATCH    | 
+|5849A026  |02:46.2  |1        |TRANSITION|COMMENT     | 
+|5849A026  |02:46.2  |1        |COMMENT   |TRANSITION  | 
+|5849A026  |02:47.2  |1        |MOVE IN   |COMMENT     | 
+|5849A026  |02:47.2  |1        |COMMENT   |MOVE IN     | 
+|5200A3A8  |02:54.8  |1        |WAIT MVOU |COMMENT     | 
+|5200A3A8  |02:54.8  |1        |COMMENT   |WAIT MVOU   | 
+|6833A049  |02:59.8  |1        |TRANSITION|COMMENT     | 
+|6833A049  |02:59.8  |1        |COMMENT   |TRANSITION  | 
+|5814A003  |03:13.2  |1        |DISPATCH  |COMMENT     | 
+|5814A003  |03:13.2  |1        |COMMENT   |DISPATCH    | 
+|4562AZB0  |03:15.4  |1        |DISPATCH  |COMMENT     | 
+|4562AZB0  |03:15.4  |1        |COMMENT   |DISPATCH    | 
+|5703A046  |03:23.2  |1        |TRANSITION|COMMENT     | 
+|5703A046  |03:23.2  |1        |COMMENT   |TRANSITION  | 
+|6352AC69  |03:26.9  |1        |WAIT MVOU |COMMENT     | 
+|6352AC69  |03:26.9  |1        |COMMENT   |WAIT MVOU   | 
+|6641AW55  |03:36.7  |1        |WAIT MVOU |COMMENT     | 
+|6641AW55  |03:36.7  |1        |COMMENT   |WAIT MVOU   | 
+|7610A2P4  |03:47.0  |1        |TRANSITION|COMMENT     | 
+|7610A2P4  |03:47.0  |1        |COMMENT   |TRANSITION  | 
+|6802A167  |03:48.4  |1        |DISPATCH  |COMMENT     | 
+|6802A167  |03:48.4  |1        |COMMENT   |DISPATCH    | 
+|5620AG08  |03:52.4  |1        |TRANSITION|COMMENT     | 
+|5620AG08  |03:52.4  |1        |COMMENT   |TRANSITION  | 
+|5620AG08  |03:55.0  |1        |SUGG RECIP|COMMENT     | 
+|5620AG08  |03:55.0  |1        |SUGG RECIP|MOVE IN     | 
+|5620AG08  |03:55.0  |1        |MOVE IN   |COMMENT     | 
+|5620AG08  |03:55.0  |1        |MOVE IN   |SUGG RECIP  | 
+|5620AG08  |03:55.0  |1        |COMMENT   |SUGG RECIP  | 
+|5620AG08  |03:55.0  |1        |COMMENT   |MOVE IN     | 
+... 
+only showing top 200 rows 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Show a detailed sample (up to 200 rows) where COMMAND differs between Prod and Fabric, 
+# along with the key fields and both COMMAND values. 
+ 
+print("\n" + "=" * 80) 
+print("COMMAND MISMATCH SAMPLE") 
+print("=" * 80) 
+ 
+compare.filter( 
+    F.coalesce(F.col("p.COMMAND"), F.lit("")) != 
+    F.coalesce(F.col("f.COMMAND"), F.lit("")) 
+).select( 
+    "LOT", 
+    "DATE_TIME", 
+    "HISTORDER", 
+    F.col("p.COMMAND").alias("PROD_COMMAND"), 
+    F.col("f.COMMAND").alias("FABRIC_COMMAND") 
+).show(200, False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+COMMAND MISMATCH SAMPLE 
+================================================================================ 
++----------+---------+---------+------------+--------------+ 
+|LOT       |DATE_TIME|HISTORDER|PROD_COMMAND|FABRIC_COMMAND| 
++----------+---------+---------+------------+--------------+ 
+|6814A040  |00:52.4  |1        |LMVR        |MVIN          | 
+|6814A040  |00:52.4  |1        |MVIN        |LMVR          | 
+|6814A042  |00:52.6  |1        |LMVR        |MVIN          | 
+|6814A042  |00:52.6  |1        |MVIN        |LMVR          | 
+|7738A016  |00:52.8  |1        |HOLD        |RPOS          | 
+|7738A016  |00:52.8  |1        |HOLD        |RPOS          | 
+|5941A0Y6  |00:52.8  |1        |LMVR        |MVIN          | 
+|5941A0Y6  |00:52.8  |1        |MVIN        |LMVR          | 
+|7738A016  |00:52.8  |1        |RPOS        |HOLD          | 
+|7738A016  |00:52.8  |1        |RPOS        |HOLD          | 
+|6541T14146|01:48.0  |1        |LMVR        |MVIN          | 
+|6541T14146|01:48.0  |1        |LMVR        |MVIN          | 
+|6541T14146|01:48.0  |1        |MVIN        |LMVR          | 
+|6541T14146|01:48.0  |1        |MVIN        |LMVR          | 
+|5620AG08  |03:55.0  |1        |LMVR        |MVIN          | 
+|5620AG08  |03:55.0  |1        |LMVR        |MVIN          | 
+|5620AG08  |03:55.0  |1        |MVIN        |LMVR          | 
+|5620AG08  |03:55.0  |1        |MVIN        |LMVR          | 
+|6833A049  |04:50.4  |1        |LMVR        |MVIN          | 
+|6833A049  |04:50.4  |1        |MVIN        |LMVR          | 
+|5703A044  |04:50.8  |1        |LMVR        |MVIN          | 
+|5703A044  |04:50.8  |1        |MVIN        |LMVR          | 
+|7192A1F6  |06:47.9  |1        |LMVR        |MVIN          | 
+|7192A1F6  |06:47.9  |1        |LMVR        |MVIN          | 
+|7192A1F6  |06:47.9  |1        |MVIN        |LMVR          | 
+|7192A1F6  |06:47.9  |1        |MVIN        |LMVR          | 
+|6514A4D2  |07:16.3  |1        |RPOS        |CMNT          | 
+|6514A4D2  |07:16.3  |1        |CMNT        |RPOS          | 
+|6541T14142|07:28.2  |1        |LMVR        |MVIN          | 
+|6541T14142|07:28.2  |1        |LMVR        |MVIN          | 
+|6541T14142|07:28.2  |1        |MVIN        |LMVR          | 
+|6541T14142|07:28.2  |1        |MVIN        |LMVR          | 
+|5582T8430 |08:32.4  |1        |LMVR        |MVIN          | 
+|5582T8430 |08:32.4  |1        |LMVR        |MVIN          | 
+|5582T8430 |08:32.4  |1        |MVIN        |LMVR          | 
+|5582T8430 |08:32.4  |1        |MVIN        |LMVR          | 
+... 
+only showing top 200 rows 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Show a detailed sample (up to 200 rows) where HIST_REC differs between Prod and Fabric, 
+# capturing how the history text is split or ordered differently. 
+ 
+print("\n" + "=" * 80) 
+print("HIST_REC MISMATCH SAMPLE") 
+print("=" * 80) 
+ 
+compare.filter( 
+    F.coalesce(F.col("p.HIST_REC"), F.lit("")) != 
+    F.coalesce(F.col("f.HIST_REC"), F.lit("")) 
+).select( 
+    "LOT", 
+    "DATE_TIME", 
+    "HISTORDER", 
+    F.col("p.HIST_REC").alias("PROD_HIST_REC"), 
+    F.col("f.HIST_REC").alias("FABRIC_HIST_REC") 
+).show(200, False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+HIST_REC MISMATCH SAMPLE 
+================================================================================ 
++----------+---------+---------+--------------------------------------+--------------------------------------+ 
+|LOT       |DATE_TIME|HISTORDER|PROD_HIST_REC                         |FABRIC_HIST_REC                       | 
++----------+---------+---------+--------------------------------------+--------------------------------------+ 
+|5245A001  |00:00.2  |1        |QTY:  6                               |Automated Move                        | 
+|5245A001  |00:00.2  |1        |Automated Move                        |QTY:  6                               | 
+|6352ACB4B |00:00.4  |1        |QTY: 25                               |Automated Move                        | 
+|6352ACB4B |00:00.4  |1        |Automated Move                        |QTY: 25                               | 
+|6352ACA3  |00:00.6  |1        |QTY: 25                               |Automated Move                        | 
+|6352ACA3  |00:00.6  |1        |Automated Move                        |QTY: 25                               | 
+|7745A1F2  |00:00.8  |1        |QTY:  6                               |Automated Move                        | 
+|7745A1F2  |00:00.8  |1        |Automated Move                        |QTY:  6                               | 
+|5773A1C6  |00:00.9  |1        |QTY: 25                               |Dispatched by Local Rules.            | 
+|5773A1C6  |00:00.9  |1        |Dispatched by Local Rules.            |QTY: 25                               | 
+|7862A072  |00:03.2  |1        |QTY: 25                               |Automated Move                        | 
+|7862A072  |00:03.2  |1        |Automated Move                        |QTY: 25                               | 
+|5499A028  |00:03.6  |1        |QTY: 25                               |Automated Move                        | 
+|5499A028  |00:03.6  |1        |Automated Move                        |QTY: 25                               | 
+|6352AC98  |00:04.0  |1        |QTY: 25                               |Automated Move                        | 
+|6352AC98  |00:04.0  |1        |Automated Move                        |QTY: 25                               | 
+|6352AC71  |00:04.4  |1        |QTY: 25                               |Automated Move                        | 
+|6352AC71  |00:04.4  |1        |Automated Move                        |QTY: 25                               | 
+|7579A1D2  |00:05.8  |1        |QTY: 25                               |Dispatched by Local Rules.            | 
+|7579A1D2  |00:05.8  |1        |Dispatched by Local Rules.            |QTY: 25                               | 
+|6541T14146|00:32.3  |1        |QTY:  4 TD                            |LotMoveIn Part 1                      | 
+|6541T14146|00:32.3  |1        |LotMoveIn Part 1                      |QTY:  4 TD                            | 
+... 
+only showing top 200 rows 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+Time stamp: DATETIME >= ‘2026-08-10 10:15:00’ AND 
+	DATE_TIME < ‘2026-08-10 11:00:00’ 
+
+ 
+
+ 
+
+Below is the code you ran in your notebook, broken into logical sections. 
+For each section I’ve added: 
+
+A comment describing the logic and what the data represents 
+
+The query/code for that section 
+
+The result from the last run (from the cell output) 
+
+ 
+
+1. Load data + row counts 
+
+Python 
+
+# LOGIC: 
+# Load two CSV snapshots (Prod and Fabric) from the Lakehouse and compare 
+# total row counts to see if both datasets have the same number of rows. 
+ 
+df_Prod = spark.read.csv( 
+    "abfss://0af8298a-814c-4982-95a7-8f9cd2c8796c@onelake.dfs.fabric.microsoft.com/6c575156-1f48-4868-9e78-593559010765/Files/Prod-08-10(10.15-11).csv", 
+    header=True, 
+    inferSchema=True 
+) 
+ 
+df_Fabric = spark.read.csv( 
+    "abfss://0af8298a-814c-4982-95a7-8f9cd2c8796c@onelake.dfs.fabric.microsoft.com/6c575156-1f48-4868-9e78-593559010765/Files/Fabric-08-10(10.15-11).csv", 
+    header=True, 
+    inferSchema=True 
+) 
+ 
+print("=" * 80) 
+print("ROW COUNTS") 
+print("=" * 80) 
+ 
+prod_count = df_Prod.count() 
+fabric_count = df_Fabric.count() 
+ 
+print(f"Prod Rows   : {prod_count}") 
+print(f"Fabric Rows : {fabric_count}") 
+ 
+
+ 
+ 
+
+Result: 
+
+Text 
+
+================================================================================ 
+ROW COUNTS 
+================================================================================ 
+Prod Rows   : 10023 
+Fabric Rows : 9841 
+ 
+
+ 
+ 
+ 
+
+2. Distinct count profile for each column 
+
+Python 
+
+# LOGIC: 
+# For each column in Prod and Fabric, compute the number of distinct values. 
+# Used to verify that cardinality per column is aligned across systems. 
+ 
+print("\n" + "=" * 80) 
+print("PROD DISTINCT COUNTS") 
+print("=" * 80) 
+ 
+df_Prod.select( 
+    *[ 
+        F.countDistinct(c).alias(c) 
+        for c in df_Prod.columns 
+    ] 
+).show(vertical=True, truncate=False) 
+ 
+print("\n" + "=" * 80) 
+print("FABRIC DISTINCT COUNTS") 
+print("=" * 80) 
+ 
+df_Fabric.select( 
+    *[ 
+        F.countDistinct(c).alias(c) 
+        for c in df_Fabric.columns 
+    ] 
+).show(vertical=True, truncate=False) 
+ 
+
+ 
+ 
+
+Result (Prod distinct counts): 
+
+Text 
+
+================================================================================ 
+PROD DISTINCT COUNTS 
+================================================================================ 
+-RECORD 0------------ 
+ LOT          | 1294  
+ DATE_TIME    | 2897  
+ HISTORDER    | 198   
+ TRANS        | 51    
+ OPER         | 451   
+ MASK_LVL     | 69    
+ OPERDESC     | 151   
+ OPERLONGDESC | 544   
+ MACHINE      | 191   
+ USERNAME     | 272   
+ HIST_REC     | 1776  
+ HISTCODE     | 51    
+ COMMAND      | 25    
+ SHORTREPORT  | 2     
+ VIEWFLAG     | 2     
+ Is_Person    | 2     
+ IS_DUPLICATE | 2     
+ EMPID        | 86    
+ 
+
+ 
+ 
+
+Result (Fabric distinct counts): 
+
+Text 
+
+================================================================================ 
+FABRIC DISTINCT COUNTS 
+================================================================================ 
+-RECORD 0------------ 
+ LOT          | 1265  
+ DATE_TIME    | 2897  
+ HISTORDER    | 198   
+ TRANS        | 51    
+ OPER         | 451   
+ MASK_LVL     | 69    
+ OPERDESC     | 151   
+ OPERLONGDESC | 544   
+ MACHINE      | 191   
+ USERNAME     | 272   
+ HIST_REC     | 1776  
+ HISTCODE     | 51    
+ COMMAND      | 25    
+ SHORTREPORT  | 2     
+ VIEWFLAG     | 2     
+ Is_Person    | 2     
+ IS_DUPLICATE | 2     
+ EMPID        | 86    
+ 
+
+ 
+ 
+ 
+
+3. Full row comparison + match percentage + duplicates 
+
+Python 
+
+# LOGIC: 
+# Compare full rows between Prod and Fabric: 
+# - Count rows that are identical in both (common_rows) 
+# - Count rows only in Prod and only in Fabric 
+# - Compute match percentage against Prod 
+# Also calculate how many duplicate rows exist in each dataset. 
+ 
+print("\n" + "=" * 80) 
+print("FULL ROW COMPARISON") 
+print("=" * 80) 
+ 
+common_rows = df_Prod.intersect(df_Fabric).count() 
+ 
+only_prod = df_Prod.exceptAll(df_Fabric) 
+only_fabric = df_Fabric.exceptAll(df_Prod) 
+ 
+only_prod_count = only_prod.count() 
+only_fabric_count = only_fabric.count() 
+ 
+print("Common rows         :", common_rows) 
+print("Only in Prod        :", only_prod_count) 
+print("Only in Fabric      :", only_fabric_count) 
+ 
+print("\n" + "=" * 80) 
+print("MATCH PERCENTAGE") 
+print("=" * 80) 
+ 
+match_pct = round(common_rows * 100 / prod_count, 2) 
+ 
+print(f"Prod Match % : {match_pct}") 
+ 
+print("\n" + "=" * 80) 
+print("DUPLICATE ROW ANALYSIS") 
+print("=" * 80) 
+ 
+prod_duplicates = prod_count - df_Prod.distinct().count() 
+fabric_duplicates = fabric_count - df_Fabric.distinct().count() 
+ 
+print("Prod duplicates   :", prod_duplicates) 
+print("Fabric duplicates :", fabric_duplicates) 
+ 
+
+ 
+ 
+
+Result: 
+
+Text 
+
+================================================================================ 
+FULL ROW COMPARISON 
+================================================================================ 
+Common rows         : 9673 
+Only in Prod        : 182 
+Only in Fabric      : 0 
+ 
+================================================================================ 
+MATCH PERCENTAGE 
+================================================================================ 
+Prod Match % : 96.51 
+ 
+================================================================================ 
+DUPLICATE ROW ANALYSIS 
+================================================================================ 
+Prod duplicates   : 168 
+Fabric duplicates : 168 
+ 
+
+ 
+ 
+ 
+
+4. Duplicate key analysis (LOT, DATE_TIME, HISTORDER) 
+
+Python 
+
+# LOGIC: 
+# Find keys (LOT, DATE_TIME, HISTORDER) that appear more than once in Prod. 
+# Helps detect duplicated key-level events. 
+ 
+key_cols = ["LOT", "DATE_TIME", "HISTORDER"] 
+ 
+print("\n" + "=" * 80) 
+print("DUPLICATE KEYS IN PROD") 
+print("=" * 80) 
+ 
+df_Prod.groupBy(*key_cols) \ 
+    .count() \ 
+    .filter("count > 1") \ 
+    .orderBy(F.desc("count")) \ 
+    .show(50, False) 
+ 
+
+ 
+ 
+
+Result (top 50 duplicate keys in Prod): 
+
+Text 
+
+================================================================================ 
+DUPLICATE KEYS IN PROD 
+================================================================================ 
++--------+---------+---------+-----+ 
+|LOT     |DATE_TIME|HISTORDER|count| 
++--------+---------+---------+-----+ 
+|6802A154|45:33.5  |1        |5    | 
+|6193A050|56:00.0  |1        |5    | 
+|6193A050|55:59.7  |1        |5    | 
+|6193A050|55:59.9  |2        |5    | 
+|7963A0R9|27:01.8  |1        |5    | 
+|6802A154|45:33.4  |1        |5    | 
+|6514A4A6|43:09.4  |1        |5    | 
+|6802A154|45:33.4  |2        |5    | 
+|7610A2P5|27:01.7  |1        |5    | 
+|6802A154|45:33.2  |1        |5    | 
+|6193A050|55:59.9  |1        |5    | 
+|6514A3T1|32:49.9  |2        |5    | 
+|7868A1H5|19:51.2  |1        |5    | 
+|7963A0R9|27:01.8  |2        |5    | 
+|6193A050|56:00.0  |2        |5    | 
+|6802A154|45:33.3  |1        |5    | 
+|7868A1H5|19:51.0  |1        |5    | 
+|6514A4A6|43:09.2  |1        |5    | 
+|6514A3T1|32:49.8  |1        |5    | 
+|6802A154|45:33.2  |2        |5    | 
+|7868A1H5|19:51.0  |2        |5    | 
+|6514A4A6|43:09.4  |2        |5    | 
+|6802A154|45:33.5  |2        |5    | 
+|6514A3T1|32:49.7  |2        |5    | 
+|6514A3T1|32:49.9  |1        |5    | 
+|6193A050|55:59.7  |2        |5    | 
+|7868A1H5|19:51.2  |2        |5    | 
+|6193A050|55:59.8  |2        |5    | 
+|6514A3T1|32:49.8  |2        |5    | 
+|7610A2P5|27:01.7  |2        |5    | 
+|6802A154|45:33.3  |2        |5    | 
+|6514A4A6|43:09.2  |2        |5    | 
+|6193A050|55:59.8  |1        |5    | 
+|6514A3T1|32:49.7  |1        |5    | 
+|6514A412|21:38.5  |1        |4    | 
+|7963A0S3|27:01.9  |1        |4    | 
+|7412A0A9|52:37.3  |1        |4    | 
+|6226A078|46:26.1  |1        |4    | 
+|6514A412|21:38.5  |2        |4    | 
+|7610A2N5|27:01.6  |2        |4    | 
+|5213A084|39:50.2  |1        |4    | 
+|7412A0A9|52:37.3  |2        |4    | 
+|6514A4A6|43:09.3  |1        |4    | 
+|7487A3A7|37:51.2  |1        |4    | 
+|6226A079|33:49.3  |1        |4    | 
+|6226A079|33:49.6  |2        |4    | 
+|7851AD62|37:50.2  |1        |4    | 
+|6226A079|33:49.7  |2        |4    | 
+|6226A079|33:49.6  |1        |4    | 
+|7868A1H5|19:51.3  |1        |4    | 
++--------+---------+---------+-----+ 
+only showing top 50 rows 
+ 
+
+ 
+ 
+ 
+
+5. Null profile by column 
+
+Python 
+
+# LOGIC: 
+# Count how many NULLs exist per column in each dataset. 
+# Used to confirm that null patterns are consistent between Prod and Fabric. 
+ 
+print("\n" + "=" * 80) 
+print("PROD NULL PROFILE") 
+print("=" * 80) 
+ 
+df_Prod.select([ 
+    F.sum(F.col(c).isNull().cast("int")).alias(c) 
+    for c in df_Prod.columns 
+]).show(vertical=True) 
+ 
+print("\n" + "=" * 80) 
+print("FABRIC NULL PROFILE") 
+print("=" * 80) 
+ 
+df_Fabric.select([ 
+    F.sum(F.col(c).isNull().cast("int")).alias(c) 
+    for c in df_Fabric.columns 
+]).show(vertical=True) 
+ 
+
+ 
+ 
+
+Result (Prod nulls): 
+
+Text 
+
+================================================================================ 
+PROD NULL PROFILE 
+================================================================================ 
+-RECORD 0------------ 
+ LOT          | 0     
+ DATE_TIME    | 0     
+ HISTORDER    | 0     
+ TRANS        | 0     
+ OPER         | 0     
+ MASK_LVL     | 0     
+ OPERDESC     | 0     
+ OPERLONGDESC | 0     
+ MACHINE      | 3899  
+ USERNAME     | 0     
+ HIST_REC     | 0     
+ HISTCODE     | 0     
+ COMMAND      | 0     
+ SHORTREPORT  | 0     
+ VIEWFLAG     | 0     
+ Is_Person    | 0     
+ IS_DUPLICATE | 0     
+ EMPID        | 0     
+ 
+
+ 
+ 
+
+Result (Fabric nulls): 
+
+Text 
+
+================================================================================ 
+FABRIC NULL PROFILE 
+================================================================================ 
+-RECORD 0------------ 
+ LOT          | 0     
+ DATE_TIME    | 0     
+ HISTORDER    | 0     
+ TRANS        | 0     
+ OPER         | 0     
+ MASK_LVL     | 0     
+ OPERDESC     | 0     
+ OPERLONGDESC | 0     
+ MACHINE      | 3859  
+ USERNAME     | 0     
+ HIST_REC     | 0     
+ HISTCODE     | 0     
+ COMMAND      | 0     
+ SHORTREPORT  | 0     
+ VIEWFLAG     | 0     
+ Is_Person    | 0     
+ IS_DUPLICATE | 0     
+ EMPID        | 0     
+ 
+
+ 
+ 
+ 
+
+6. Date range comparison 
+
+Python 
+
+# LOGIC: 
+# Compare the min and max DATE_TIME values between Prod and Fabric 
+# to ensure both cover the same time window. 
+ 
+print("\n" + "=" * 80) 
+print("DATE RANGE COMPARISON") 
+print("=" * 80) 
+ 
+print("Prod") 
+df_Prod.select( 
+    F.min("DATE_TIME").alias("MIN_DATE_TIME"), 
+    F.max("DATE_TIME").alias("MAX_DATE_TIME") 
+).show(truncate=False) 
+ 
+print("Fabric") 
+df_Fabric.select( 
+    F.min("DATE_TIME").alias("MIN_DATE_TIME"), 
+    F.max("DATE_TIME").alias("MAX_DATE_TIME") 
+).show(truncate=False) 
+ 
+
+ 
+ 
+
+Result: 
+
+Text 
+
+================================================================================ 
+DATE RANGE COMPARISON 
+================================================================================ 
+Prod 
++-------------+-------------+ 
+|MIN_DATE_TIME|MAX_DATE_TIME| 
++-------------+-------------+ 
+|15:00.2      |59:59.4      | 
++-------------+-------------+ 
+ 
+Fabric 
++-------------+-------------+ 
+|MIN_DATE_TIME|MAX_DATE_TIME| 
++-------------+-------------+ 
+|15:00.2      |59:59.4      | 
++-------------+-------------+ 
+ 
+
+ 
+ 
+ 
+
+7. Lots only in Prod / only in Fabric 
+
+Python 
+
+# LOGIC: 
+# List distinct LOTs that exist only in Prod and only in Fabric. 
+# This highlights missing lots between the two systems. 
+ 
+print("\n" + "=" * 80) 
+print("LOTS ONLY IN PROD") 
+print("=" * 80) 
+ 
+only_prod.select("LOT") \ 
+    .distinct() \ 
+    .orderBy("LOT") \ 
+    .show(1000, False) 
+ 
+print("\n" + "=" * 80) 
+print("LOTS ONLY IN FABRIC") 
+print("=" * 80) 
+ 
+only_fabric.select("LOT") \ 
+    .distinct() \ 
+    .orderBy("LOT") \ 
+    .show(1000, False) 
+ 
+
+ 
+ 
+
+Result (lots only in Prod): 
+
+Text 
+
+================================================================================ 
+LOTS ONLY IN PROD 
+================================================================================ 
++---------+ 
+|LOT      | 
++---------+ 
+|5245A001A| 
+|5630A001A| 
+|5630A003A| 
+|5704A326E| 
+|5801A009A| 
+|5822A061A| 
+|5941A0F5A| 
+|6098A0E1A| 
+|6121A001A| 
+|6226A081A| 
+|6352AC23D| 
+|6352AC45A| 
+|6554A0A0 | 
+|6554A0A1 | 
+|6794A001N| 
+|6794A007B| 
+|6951A016A| 
+|7192A1E4A| 
+|7417A001A| 
+|7499A054 | 
+|7499A055 | 
+|7579A1C3A| 
+|7610A2J5A| 
+|7693A006H| 
+|7693A006J| 
+|7851AD84A| 
+|7851AD89A| 
+|7974A005A| 
+|7974A005B| 
++---------+ 
+ 
+
+ 
+ 
+
+Result (lots only in Fabric): 
+
+Text 
+
+================================================================================ 
+LOTS ONLY IN FABRIC 
+================================================================================ 
++---+ 
+|LOT| 
++---+ 
++---+ 
+ 
+
+ 
+ 
+ 
+
+8. Key comparison (LOT, DATE_TIME, HISTORDER) and distinct missing lots 
+
+Python 
+
+# LOGIC: 
+# Using the key columns, count: 
+# - keys common to both datasets 
+# - keys missing from Fabric (present in Prod only) 
+# - keys missing from Prod (present in Fabric only) 
+# Also list distinct LOTs associated with missing keys. 
+ 
+print("\n" + "=" * 80) 
+print("KEY COMPARISON (LOT, DATE_TIME, HISTORDER)") 
+print("=" * 80) 
+ 
+common_keys = df_Prod.join( 
+    df_Fabric, 
+    key_cols, 
+    "inner" 
+) 
+ 
+prod_missing = df_Prod.join( 
+    df_Fabric, 
+    key_cols, 
+    "left_anti" 
+) 
+ 
+fabric_missing = df_Fabric.join( 
+    df_Prod, 
+    key_cols, 
+    "left_anti" 
+) 
+ 
+print("Common Keys      :", common_keys.count()) 
+print("Prod Missing     :", prod_missing.count()) 
+print("Fabric Missing   :", fabric_missing.count()) 
+ 
+print("\n" + "=" * 80) 
+print("DISTINCT LOTS MISSING IN FABRIC") 
+print("=" * 80) 
+ 
+prod_missing.select("LOT") \ 
+    .distinct() \ 
+    .orderBy("LOT") \ 
+    .show(1000, False) 
+ 
+print("\n" + "=" * 80) 
+print("DISTINCT LOTS MISSING IN PROD") 
+print("=" * 80) 
+ 
+fabric_missing.select("LOT") \ 
+    .distinct() \ 
+    .orderBy("LOT") \ 
+    .show(1000, False) 
+ 
+
+ 
+ 
+
+Result: 
+
+Text 
+
+================================================================================ 
+KEY COMPARISON (LOT, DATE_TIME, HISTORDER) 
+================================================================================ 
+Common Keys      : 12691 
+Prod Missing     : 182 
+Fabric Missing   : 0 
+ 
+
+ 
+ 
+
+Result (distinct lots missing in Fabric): 
+
+Text 
+
+================================================================================ 
+DISTINCT LOTS MISSING IN FABRIC 
+================================================================================ 
++---------+ 
+|LOT      | 
++---------+ 
+|5245A001A| 
+|5630A001A| 
+|5630A003A| 
+|5704A326E| 
+|5801A009A| 
+|5822A061A| 
+|5941A0F5A| 
+|6098A0E1A| 
+|6121A001A| 
+|6226A081A| 
+|6352AC23D| 
+|6352AC45A| 
+|6554A0A0 | 
+|6554A0A1 | 
+|6794A001N| 
+|6794A007B| 
+|6951A016A| 
+|7192A1E4A| 
+|7417A001A| 
+|7499A054 | 
+|7499A055 | 
+|7579A1C3A| 
+|7610A2J5A| 
+|7693A006H| 
+|7693A006J| 
+|7851AD84A| 
+|7851AD89A| 
+|7974A005A| 
+|7974A005B| 
++---------+ 
+ 
+
+ 
+ 
+
+Result (distinct lots missing in Prod): 
+
+Text 
+
+================================================================================ 
+DISTINCT LOTS MISSING IN PROD 
+================================================================================ 
++---+ 
+|LOT| 
++---+ 
++---+ 
+ 
+
+ 
+ 
+ 
+
+9. HISTCODE distribution comparison 
+
+Python 
+
+# LOGIC: 
+# Compare how many records each HISTCODE has in Prod vs Fabric, 
+# and compute the difference for each code. 
+ 
+print("\n" + "=" * 80) 
+print("HISTCODE COMPARISON") 
+print("=" * 80) 
+ 
+prod_hist = ( 
+    df_Prod.groupBy("HISTCODE") 
+    .count() 
+    .withColumnRenamed("count", "prod_count") 
+) 
+ 
+fabric_hist = ( 
+    df_Fabric.groupBy("HISTCODE") 
+    .count() 
+    .withColumnRenamed("count", "fabric_count") 
+) 
+ 
+hist_compare = ( 
+    prod_hist.join( 
+        fabric_hist, 
+        "HISTCODE", 
+        "full" 
+    ) 
+    .fillna(0) 
+    .withColumn( 
+        "difference", 
+        F.col("fabric_count") - F.col("prod_count") 
+    ) 
+) 
+ 
+hist_compare.orderBy( 
+    F.desc(F.abs(F.col("difference"))) 
+).show(100, False) 
+ 
+
+ 
+ 
+
+Result (excerpt): 
+
+Text 
+
+================================================================================ 
+HISTCODE COMPARISON 
+================================================================================ 
++--------+----------+------------+----------+ 
+|HISTCODE|prod_count|fabric_count|difference| 
++--------+----------+------------+----------+ 
+|CM      |3620      |3572        |-48       | 
+|LL      |1333      |1292        |-41       | 
+|TX      |449       |433         |-16       | 
+|OI      |378       |366         |-12       | 
+|CS      |308       |298         |-10       | 
+|DL      |392       |382         |-10       | 
+|IN      |363       |355         |-8        | 
+|SR      |390       |382         |-8        | 
+|RS      |218       |212         |-6        | 
+|LA      |341       |336         |-5        | 
+|HC      |48        |44          |-4        | 
+|MV      |335       |331         |-4        | 
+|WM      |271       |268         |-3        | 
+|AR      |225       |223         |-2        | 
+|HT      |36        |34          |-2        | 
+|SC      |2         |1           |-1        | 
+|SK      |30        |29          |-1        | 
+|UD      |56        |55          |-1        | 
+|AF      |6         |6           |0         | 
+... 
+|WR      |25        |25          |0         | 
++--------+----------+------------+----------+ 
+ 
+
+ 
+ 
+ 
+
+10. OPER distribution comparison 
+
+Python 
+
+# LOGIC: 
+# Compare counts per OPER between Prod and Fabric, 
+# to validate that operation-level distributions match. 
+ 
+print("\n" + "=" * 80) 
+print("OPER DISTRIBUTION") 
+print("=" * 80) 
+ 
+oper_compare = ( 
+    df_Prod.groupBy("OPER") 
+    .count() 
+    .withColumnRenamed("count", "prod_count") 
+    .join( 
+        df_Fabric.groupBy("OPER") 
+        .count() 
+        .withColumnRenamed("count", "fabric_count"), 
+        "OPER", 
+        "full" 
+    ) 
+    .fillna(0) 
+) 
+ 
+oper_compare.orderBy("OPER").show(500, False) 
+ 
+
+ 
+ 
+
+Result (excerpt): 
+
+Text 
+
+================================================================================ 
+OPER DISTRIBUTION 
+================================================================================ 
++-----+----------+------------+ 
+|OPER |prod_count|fabric_count| 
++-----+----------+------------+ 
+|-100 |833       |833         | 
+|20209|5         |5           | 
+|21070|24        |24          | 
+... 
+|95051|13        |13          | 
+|99999|592       |592         | 
++-----+----------+------------+ 
+ 
+
+ 
+ 
+
+(The output lists all OPER values with prod_count and fabric_count.) 
+
+ 
+
+11. EMPID distribution comparison 
+
+Python 
+
+# LOGIC: 
+# Compare how many records each EMPID has in Prod vs Fabric, 
+# to ensure employee-usage distribution is consistent. 
+ 
+print("\n" + "=" * 80) 
+print("EMPID DISTRIBUTION") 
+print("=" * 80) 
+ 
+empid_compare = ( 
+    df_Prod.groupBy("EMPID") 
+    .count() 
+    .withColumnRenamed("count", "prod_count") 
+    .join( 
+        df_Fabric.groupBy("EMPID") 
+        .count() 
+        .withColumnRenamed("count", "fabric_count"), 
+        "EMPID", 
+        "full" 
+    ) 
+    .fillna(0) 
+) 
+ 
+empid_compare.orderBy( 
+    F.desc("fabric_count") 
+).show(100, False) 
+ 
+
+ 
+ 
+
+Result (excerpt): 
+
+Text 
+
+================================================================================ 
+EMPID DISTRIBUTION 
+================================================================================ 
++-----+----------+------------+ 
+|EMPID|prod_count|fabric_count| 
++-----+----------+------------+ 
+|SYSTM|1924      |1863        | 
+|0    |1703      |1668        | 
+|5493 |1312      |1312        | 
+|3414 |778       |778         | 
+|99999|570       |570         | 
+... 
+|6128 |2         |2           | 
++-----+----------+------------+ 
+ 
+
+ 
+ 
+ 
+
+12. MACHINE distribution comparison 
+
+Python 
+
+# LOGIC: 
+# Compare counts per MACHINE between Prod and Fabric, 
+# to verify tool/machine usage consistency. 
+ 
+print("\n" + "=" * 80) 
+print("MACHINE DISTRIBUTION") 
+print("=" * 80) 
+ 
+machine_compare = ( 
+    df_Prod.groupBy("MACHINE") 
+    .count() 
+    .withColumnRenamed("count", "prod_count") 
+    .join( 
+        df_Fabric.groupBy("MACHINE") 
+        .count() 
+        .withColumnRenamed("count", "fabric_count"), 
+        "MACHINE", 
+        "full" 
+    ) 
+    .fillna(0) 
+) 
+ 
+machine_compare.orderBy("MACHINE").show(500, False) 
+ 
+
+ 
+ 
+
+Result (excerpt): 
+
+Text 
+
+================================================================================ 
+MACHINE DISTRIBUTION 
+================================================================================ 
++--------------+----------+------------+ 
+|MACHINE       |prod_count|fabric_count| 
++--------------+----------+------------+ 
+|NULL          |3899      |0           | 
+|NULL          |0         |3859        | 
+|ALD101        |21        |7           | 
+|ALPHA307      |51        |51          | 
+... 
+|WB91          |64        |64          | 
++--------------+----------+------------+ 
+ 
+
+ 
+ 
+ 
+
+13. Summary metrics 
+
+Python 
+
+# LOGIC: 
+# Compute overall metrics per dataset: 
+# row count, distinct lots, operations, users, machines, and empids. 
+ 
+print("\n" + "=" * 80) 
+print("SUMMARY METRICS") 
+print("=" * 80) 
+ 
+agg_prod = df_Prod.select( 
+    F.count("*").alias("rows"), 
+    F.countDistinct("LOT").alias("lots"), 
+    F.countDistinct("OPER").alias("opers"), 
+    F.countDistinct("USERNAME").alias("users"), 
+    F.countDistinct("MACHINE").alias("machines"), 
+    F.countDistinct("EMPID").alias("empids") 
+) 
+ 
+agg_fabric = df_Fabric.select( 
+    F.count("*").alias("rows"), 
+    F.countDistinct("LOT").alias("lots"), 
+    F.countDistinct("OPER").alias("opers"), 
+    F.countDistinct("USERNAME").alias("users"), 
+    F.countDistinct("MACHINE").alias("machines"), 
+    F.countDistinct("EMPID").alias("empids") 
+) 
+ 
+print("Prod Summary") 
+agg_prod.show(truncate=False) 
+ 
+print("Fabric Summary") 
+agg_fabric.show(truncate=False) 
+ 
+
+ 
+ 
+
+Result: 
+
+Text 
+
+================================================================================ 
+SUMMARY METRICS 
+================================================================================ 
+Prod Summary 
++-----+----+-----+-----+--------+------+ 
+|rows |lots|opers|users|machines|empids| 
++-----+----+-----+-----+--------+------+ 
+|10023|1294|451  |272  |191     |86    | 
++-----+----+-----+-----+--------+------+ 
+ 
+Fabric Summary 
++----+----+-----+-----+--------+------+ 
+|rows|lots|opers|users|machines|empids| 
++----+----+-----+-----+--------+------+ 
+|9841|1265|451  |272  |191     |86    | 
++----+----+-----+-----+--------+------+ 
+ 
+
+ 
+ 
+ 
+
+14. Row-level attribute mismatch summary 
+
+Python 
+
+# LOGIC: 
+# For rows matched on key (LOT, DATE_TIME, HISTORDER), 
+# count how many have mismatched values in key attributes like OPER, 
+# TRANS, HIST_REC, MACHINE, USERNAME, COMMAND, EMPID, etc. 
+ 
+print("\n" + "=" * 80) 
+print("ATTRIBUTE MISMATCH ANALYSIS") 
+print("=" * 80) 
+ 
+cols_to_compare = [ 
+    "OPER", 
+    "OPERDESC", 
+    "OPERLONGDESC", 
+    "TRANS", 
+    "HIST_REC", 
+    "MACHINE", 
+    "USERNAME", 
+    "COMMAND", 
+    "EMPID" 
+] 
+ 
+compare = ( 
+    df_Prod.alias("p") 
+    .join( 
+        df_Fabric.alias("f"), 
+        key_cols 
+    ) 
+) 
+ 
+mismatch_summary = compare.agg(*[ 
+    F.sum( 
+        F.when( 
+            F.coalesce(F.col(f"p.{c}"), F.lit("")) != 
+            F.coalesce(F.col(f"f.{c}"), F.lit("")), 
+            1 
+        ).otherwise(0) 
+    ).alias(f"{c}_MISMATCH") 
+    for c in cols_to_compare 
+]) 
+ 
+mismatch_summary.show(truncate=False) 
+ 
+
+ 
+ 
+
+Result: 
+
+Text 
+
+================================================================================ 
+ATTRIBUTE MISMATCH ANALYSIS 
+================================================================================ 
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+ 
+|OPER_MISMATCH|OPERDESC_MISMATCH|OPERLONGDESC_MISMATCH|TRANS_MISMATCH|HIST_REC_MISMATCH|MACHINE_MISMATCH|USERNAME_MISMATCH|COMMAND_MISMATCH|EMPID_MISMATCH| 
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+ 
+|10           |10               |10                   |1466          |2204             |40              |68               |318             |0             | 
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+ 
+ 
+
+ 
+ 
+ 
+
+15. TRANS mismatch details (sample) 
+
+Python 
+
+# LOGIC: 
+# For rows where TRANS differs between Prod and Fabric, 
+# display a sample set of mismatching rows with both values. 
+ 
+print("\n" + "=" * 80) 
+print("TRANS MISMATCH SAMPLE") 
+print("=" * 80) 
+ 
+compare.filter( 
+    F.coalesce(F.col("p.TRANS"), F.lit("")) != 
+    F.coalesce(F.col("f.TRANS"), F.lit("")) 
+).select( 
+    "LOT", 
+    "DATE_TIME", 
+    "HISTORDER", 
+    F.col("p.TRANS").alias("PROD_TRANS"), 
+    F.col("f.TRANS").alias("FABRIC_TRANS") 
+).show(200, False) 
+ 
+
+ 
+ 
+
+Result (first 200 mismatches): 
+(very long; excerpt) 
+
+Text 
+
+================================================================================ 
+TRANS MISMATCH SAMPLE 
+================================================================================ 
++----------+---------+---------+----------+------------+ 
+|LOT       |DATE_TIME|HISTORDER|PROD_TRANS|FABRIC_TRANS| 
++----------+---------+---------+----------+------------+ 
+|5941A102  |15:00.2  |1        |SUGG RECIP|COMMENT     | 
+|5941A102  |15:00.2  |1        |SUGG RECIP|MOVE IN     | 
+|5941A102  |15:00.2  |1        |SUGG RECIP|COMMENT     | 
+|5941A102  |15:00.2  |1        |COMMENT   |MOVE IN     | 
+... 
+|6389A065  |21:51.1  |1        |WAIT MVOU |COMMENT     | 
+|6389A065  |21:51.1  |1        |COMMENT   |WAIT MVOU   | 
++----------+---------+---------+----------+------------+ 
+only showing top 200 rows 
+ 
+
+ 
+ 
+ 
+
+16. COMMAND mismatch details (sample) 
+
+Python 
+
+# LOGIC: 
+# For rows where COMMAND differs between Prod and Fabric, 
+# display a sample with both command values for investigation. 
+ 
+print("\n" + "=" * 80) 
+print("COMMAND MISMATCH SAMPLE") 
+print("=" * 80) 
+ 
+compare.filter( 
+    F.coalesce(F.col("p.COMMAND"), F.lit("")) != 
+    F.coalesce(F.col("f.COMMAND"), F.lit("")) 
+).select( 
+    "LOT", 
+    "DATE_TIME", 
+    "HISTORDER", 
+    F.col("p.COMMAND").alias("PROD_COMMAND"), 
+    F.col("f.COMMAND").alias("FABRIC_COMMAND") 
+).show(200, False) 
+ 
+
+ 
+ 
+
+Result (first 200 mismatches): 
+(very long; excerpt) 
+
+Text 
+
+================================================================================ 
+COMMAND MISMATCH SAMPLE 
+================================================================================ 
++----------+---------+---------+------------+--------------+ 
+|LOT       |DATE_TIME|HISTORDER|PROD_COMMAND|FABRIC_COMMAND| 
++----------+---------+---------+------------+--------------+ 
+|5941A102  |15:00.2  |1        |LMVR        |LEDC          | 
+|5941A102  |15:00.2  |1        |LMVR        |MVIN          | 
+... 
+|5941A0C8  |40:42.8  |1        |HOLD        |RPOS          | 
+|5941A0C8  |40:42.8  |1        |HOLD        |RPOS          | 
++----------+---------+---------+------------+--------------+ 
+only showing top 200 rows 
+ 
+
+ 
+ 
+ 
+
+17. HIST_REC mismatch details (sample) 
+
+Python 
+
+# LOGIC: 
+# For rows where HIST_REC text differs between Prod and Fabric, 
+# display a sample to inspect how history text is being split or reordered. 
+ 
+print("\n" + "=" * 80) 
+print("HIST_REC MISMATCH SAMPLE") 
+print("=" * 80) 
+ 
+compare.filter( 
+    F.coalesce(F.col("p.HIST_REC"), F.lit("")) != 
+    F.coalesce(F.col("f.HIST_REC"), F.lit("")) 
+).select( 
+    "LOT", 
+    "DATE_TIME", 
+    "HISTORDER", 
+    F.col("p.HIST_REC").alias("PROD_HIST_REC"), 
+    F.col("f.HIST_REC").alias("FABRIC_HIST_REC") 
+).show(200, False) 
+ 
+
+ 
+ 
+
+Result (first 200 mismatches): 
+(very long; excerpt) 
+
+Text 
+
+================================================================================ 
+HIST_REC MISMATCH SAMPLE 
+================================================================================ 
++----------+---------+---------+----------------------------------------+----------------------------------------+ 
+|LOT       |DATE_TIME|HISTORDER|PROD_HIST_REC                           |FABRIC_HIST_REC                         | 
++----------+---------+---------+----------------------------------------+----------------------------------------+ 
+|5941A102  |15:00.2  |1        |ROM RECIP ID: E_WB81_N_40_BATH_A REV: 3 |Lot selected for EDC setup:             | 
+|5941A102  |15:00.2  |1        |ROM RECIP ID: E_WB81_N_40_BATH_A REV: 3 |QTY: 25                                 | 
+... 
+|7868A1H5  |19:51.1  |2        |Parameter: APC_M_YTran                  |Parameter: APC_M_Rot                    | 
++----------+---------+---------+----------------------------------------+----------------------------------------+ 
+only showing top 200 rows 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+Time stamp: DATETIME >= ‘2026-08-11 14:15:00’ AND  
+	DATE_TIME < ‘2026-08-11 15:00:00’   
+
+Below are the queries (code) from the second cell along with their results, in the same format as before: 
+
+Each code block starts with a # LOGIC comment explaining what it does and what data it represents 
+
+Each code block is followed by a highlighted result block (```text) 
+
+ 
+
+Python 
+
+# LOGIC: 
+# Load two CSV extracts (Prod and Fabric) from the Lakehouse for the specified window. 
+# Then compute total row counts for each dataset to validate basic volume alignment. 
+ 
+from pyspark.sql import functions as F 
+ 
+df_Prod = spark.read.csv( 
+    "abfss://0af8298a-814c-4982-95a7-8f9cd2c8796c@onelake.dfs.fabric.microsoft.com/6c575156-1f48-4868-9e78-593559010765/Files/Prod-08-11(14.15-15).csv", 
+    header=True, 
+    inferSchema=True 
+) 
+ 
+df_Fabric = spark.read.csv( 
+    "abfss://0af8298a-814c-4982-95a7-8f9cd2c8796c@onelake.dfs.fabric.microsoft.com/6c575156-1f48-4868-9e78-593559010765/Files/Fabric-08-11(14.15-15).csv", 
+    header=True, 
+    inferSchema=True 
+) 
+ 
+print("=" * 80) 
+print("ROW COUNTS") 
+print("=" * 80) 
+ 
+prod_count = df_Prod.count() 
+fabric_count = df_Fabric.count() 
+ 
+print(f"Prod Rows   : {prod_count}") 
+print(f"Fabric Rows : {fabric_count}") 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+ROW COUNTS 
+================================================================================ 
+Prod Rows   : 9889 
+Fabric Rows : 9706 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# For each column in Prod and Fabric, compute the number of distinct values. 
+# This profiles column cardinality and helps detect missing/extra variety per system. 
+ 
+print("\n" + "=" * 80) 
+print("PROD DISTINCT COUNTS") 
+print("=" * 80) 
+ 
+df_Prod.select( 
+    *[ 
+        F.countDistinct(c).alias(c) 
+        for c in df_Prod.columns 
+    ] 
+).show(vertical=True, truncate=False) 
+ 
+print("\n" + "=" * 80) 
+print("FABRIC DISTINCT COUNTS") 
+print("=" * 80) 
+ 
+df_Fabric.select( 
+    *[ 
+        F.countDistinct(c).alias(c) 
+        for c in df_Fabric.columns 
+    ] 
+).show(vertical=True, truncate=False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+PROD DISTINCT COUNTS 
+================================================================================ 
+-RECORD 0------------ 
+ LOT          | 1257  
+ DATE_TIME    | 2757  
+ HISTORDER    | 231   
+ TRANS        | 50    
+ OPER         | 460   
+ MASK_LVL     | 64    
+ OPERDESC     | 155   
+ OPERLONGDESC | 543   
+ MACHINE      | 190   
+ USERNAME     | 235   
+ HIST_REC     | 1817  
+ HISTCODE     | 50    
+ COMMAND      | 20    
+ SHORTREPORT  | 2     
+ VIEWFLAG     | 2     
+ Is_Person    | 2     
+ IS_DUPLICATE | 2     
+ EMPID        | 76    
+ 
+================================================================================ 
+FABRIC DISTINCT COUNTS 
+================================================================================ 
+-RECORD 0------------ 
+ LOT          | 1230  
+ DATE_TIME    | 2757  
+ HISTORDER    | 231   
+ TRANS        | 50    
+ OPER         | 460   
+ MASK_LVL     | 64    
+ OPERDESC     | 155   
+ OPERLONGDESC | 543   
+ MACHINE      | 190   
+ USERNAME     | 235   
+ HIST_REC     | 1817  
+ HISTCODE     | 50    
+ COMMAND      | 20    
+ SHORTREPORT  | 2     
+ VIEWFLAG     | 2     
+ Is_Person    | 2     
+ IS_DUPLICATE | 2     
+ EMPID        | 76    
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Full row-level comparison: 
+#  - common_rows  : rows identical in Prod and Fabric 
+#  - only_prod    : rows only in Prod 
+#  - only_fabric  : rows only in Fabric 
+# Then compute match percentage vs Prod, and count duplicate rows in each dataset. 
+ 
+print("\n" + "=" * 80) 
+print("FULL ROW COMPARISON") 
+print("=" * 80) 
+ 
+common_rows = df_Prod.intersect(df_Fabric).count() 
+ 
+only_prod = df_Prod.exceptAll(df_Fabric) 
+only_fabric = df_Fabric.exceptAll(df_Prod) 
+ 
+only_prod_count = only_prod.count() 
+only_fabric_count = only_fabric.count() 
+ 
+print("Common rows         :", common_rows) 
+print("Only in Prod        :", only_prod_count) 
+print("Only in Fabric      :", only_fabric_count) 
+ 
+print("\n" + "=" * 80) 
+print("MATCH PERCENTAGE") 
+print("=" * 80) 
+ 
+match_pct = round(common_rows * 100 / prod_count, 2) 
+ 
+print(f"Prod Match % : {match_pct}") 
+ 
+print("\n" + "=" * 80) 
+print("DUPLICATE ROW ANALYSIS") 
+print("=" * 80) 
+ 
+prod_duplicates = prod_count - df_Prod.distinct().count() 
+fabric_duplicates = fabric_count - df_Fabric.distinct().count() 
+ 
+print("Prod duplicates   :", prod_duplicates) 
+print("Fabric duplicates :", fabric_duplicates) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+FULL ROW COMPARISON 
+================================================================================ 
+Common rows         : 9614 
+Only in Prod        : 183 
+Only in Fabric      : 0 
+ 
+================================================================================ 
+MATCH PERCENTAGE 
+================================================================================ 
+Prod Match % : 97.22 
+ 
+================================================================================ 
+DUPLICATE ROW ANALYSIS 
+================================================================================ 
+Prod duplicates   : 95 
+Fabric duplicates : 92 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Find keys (LOT, DATE_TIME, HISTORDER) that appear more than once in Prod. 
+# These identify duplicated key-level events in the Prod dataset. 
+ 
+key_cols = ["LOT", "DATE_TIME", "HISTORDER"] 
+ 
+print("\n" + "=" * 80) 
+print("DUPLICATE KEYS IN PROD") 
+print("=" * 80) 
+ 
+df_Prod.groupBy(*key_cols) \ 
+    .count() \ 
+    .filter("count > 1") \ 
+    .orderBy(F.desc("count")) \ 
+    .show(50, False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+DUPLICATE KEYS IN PROD 
+================================================================================ 
++----------+---------+---------+-----+ 
+|LOT       |DATE_TIME|HISTORDER|count| 
++----------+---------+---------+-----+ 
+|6794A015  |31:02.8  |15       |10   | 
+|6794A014  |19:23.7  |15       |10   | 
+|7412A0D9  |53:03.0  |1        |6    | 
+|7412A0D9  |53:03.0  |2        |6    | 
+|7412A0D9  |53:02.9  |1        |5    | 
+|5139A003  |36:53.1  |1        |5    | 
+|5139A003  |36:53.1  |2        |5    | 
+|7412A0D9  |53:03.1  |1        |5    | 
+|5398A1B9  |59:58.9  |1        |5    | 
+|5139A003  |36:52.8  |2        |5    | 
+|5139A003  |36:52.8  |1        |5    | 
+|7738A015  |25:43.8  |1        |5    | 
+|5139A003  |36:52.9  |2        |5    | 
+|5398A1B9  |59:58.9  |2        |5    | 
+|7412A0D9  |53:03.1  |2        |5    | 
+|7412A0D9  |53:02.9  |2        |5    | 
+|5139A003  |36:52.9  |1        |5    | 
+|7738A015  |25:43.8  |2        |5    | 
+|5139A003  |36:53.0  |1        |4    | 
+|5139A003  |36:52.7  |1        |4    | 
+|5325A230  |21:57.9  |2        |4    | 
+|5139A003  |36:52.7  |2        |4    | 
+|5325A230  |21:57.9  |1        |4    | 
+|5139A003  |36:53.0  |2        |4    | 
+|7347A0D3  |15:51.3  |1        |3    | 
+|6504A039  |48:03.0  |2        |3    | 
+|7225ABT9  |37:07.5  |1        |3    | 
+|7610A2N0  |35:23.2  |1        |3    | 
+|7412A0D9  |53:02.8  |2        |3    | 
+|6198A045  |44:06.8  |1        |3    | 
+|6389A072  |52:38.9  |1        |3    | 
+|6098A0H8  |47:41.0  |2        |3    | 
+|5703A032  |26:46.2  |1        |3    | 
+|5500A002  |16:49.1  |1        |3    | 
+|7991A022  |52:03.3  |2        |3    | 
+|5539A1K8  |26:44.5  |1        |3    | 
+|7486A009  |48:03.1  |1        |3    | 
+|5773A1C8  |48:02.8  |1        |3    | 
+|5941A0R4  |42:23.3  |1        |3    | 
+|7412A0D9  |53:02.8  |1        |3    | 
+|5499A030  |41:05.0  |1        |3    | 
+|6514A4J7  |38:43.3  |1        |3    | 
+|5813A003  |25:34.8  |1        |3    | 
+|6098A0B8  |18:14.6  |1        |3    | 
+|7710A051  |22:25.0  |2        |3    | 
+|7851ADA5  |50:02.9  |1        |3    | 
+|6514A449  |47:22.4  |1        |3    | 
+|5539A1L3  |47:40.9  |1        |3    | 
+|5620AG34  |48:02.7  |1        |3    | 
+|5544T35906|42:04.5  |1        |3    | 
++----------+---------+---------+-----+ 
+only showing top 50 rows 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Compute null counts for each column in Prod and Fabric. 
+# This identifies completeness differences (how many nulls) per column per system. 
+ 
+print("\n" + "=" * 80) 
+print("PROD NULL PROFILE") 
+print("=" * 80) 
+ 
+df_Prod.select([ 
+    F.sum(F.col(c).isNull().cast("int")).alias(c) 
+    for c in df_Prod.columns 
+]).show(vertical=True) 
+ 
+print("\n" + "=" * 80) 
+print("FABRIC NULL PROFILE") 
+print("=" * 80) 
+ 
+df_Fabric.select([ 
+    F.sum(F.col(c).isNull().cast("int")).alias(c) 
+    for c in df_Fabric.columns 
+]).show(vertical=True) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+PROD NULL PROFILE 
+================================================================================ 
+-RECORD 0------------ 
+ LOT          | 0     
+ DATE_TIME    | 0     
+ HISTORDER    | 0     
+ TRANS        | 0     
+ OPER         | 0     
+ MASK_LVL     | 0     
+ OPERDESC     | 0     
+ OPERLONGDESC | 0     
+ MACHINE      | 4258  
+ USERNAME     | 0     
+ HIST_REC     | 0     
+ HISTCODE     | 0     
+ COMMAND      | 0     
+ SHORTREPORT  | 0     
+ VIEWFLAG     | 0     
+ Is_Person    | 0     
+ IS_DUPLICATE | 0     
+ EMPID        | 0     
+ 
+================================================================================ 
+FABRIC NULL PROFILE 
+================================================================================ 
+-RECORD 0------------ 
+ LOT          | 0     
+ DATE_TIME    | 0     
+ HISTORDER    | 0     
+ TRANS        | 0     
+ OPER         | 0     
+ MASK_LVL     | 0     
+ OPERDESC     | 0     
+ OPERLONGDESC | 0     
+ MACHINE      | 4217  
+ USERNAME     | 0     
+ HIST_REC     | 0     
+ HISTCODE     | 0     
+ COMMAND      | 0     
+ SHORTREPORT  | 0     
+ VIEWFLAG     | 0     
+ Is_Person    | 0     
+ IS_DUPLICATE | 0     
+ EMPID        | 0     
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Compare the DATE_TIME coverage in Prod vs Fabric by checking min and max values. 
+# Ensures both systems span the same time window for this extract. 
+ 
+print("\n" + "=" * 80) 
+print("DATE RANGE COMPARISON") 
+print("=" * 80) 
+ 
+print("Prod") 
+df_Prod.select( 
+    F.min("DATE_TIME").alias("MIN_DATE_TIME"), 
+    F.max("DATE_TIME").alias("MAX_DATE_TIME") 
+).show(truncate=False) 
+ 
+print("Fabric") 
+df_Fabric.select( 
+    F.min("DATE_TIME").alias("MIN_DATE_TIME"), 
+    F.max("DATE_TIME").alias("MAX_DATE_TIME") 
+).show(truncate=False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+DATE RANGE COMPARISON 
+================================================================================ 
+Prod 
++-------------+-------------+ 
+|MIN_DATE_TIME|MAX_DATE_TIME| 
++-------------+-------------+ 
+|15:00.6      |59:59.0      | 
++-------------+-------------+ 
+ 
+Fabric 
++-------------+-------------+ 
+|MIN_DATE_TIME|MAX_DATE_TIME| 
++-------------+-------------+ 
+|15:00.6      |59:59.0      | 
++-------------+-------------+ 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# List distinct LOT values that are present only in Prod and only in Fabric, 
+# based on the full row comparison (only_prod, only_fabric). 
+ 
+print("\n" + "=" * 80) 
+print("LOTS ONLY IN PROD") 
+print("=" * 80) 
+ 
+only_prod.select("LOT") \ 
+    .distinct() \ 
+    .orderBy("LOT") \ 
+    .show(1000, False) 
+ 
+print("\n" + "=" * 80) 
+print("LOTS ONLY IN FABRIC") 
+print("=" * 80) 
+ 
+only_fabric.select("LOT") \ 
+    .distinct() \ 
+    .orderBy("LOT") \ 
+    .show(1000, False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+LOTS ONLY IN PROD 
+================================================================================ 
++---------+ 
+|LOT      | 
++---------+ 
+|5208A020A| 
+|5245A001A| 
+|5325A234A| 
+|5441A001 | 
+|5451A0A7A| 
+|5539A1Q7A| 
+|5630A001A| 
+|5630A002A| 
+|5819A026A| 
+|5822A061A| 
+|6121A001A| 
+|6339A2H0A| 
+|6339A2J3A| 
+|6339A2K9A| 
+|6554A0A0 | 
+|6782A001A| 
+|6794A001N| 
+|6794A002K| 
+|6794A007B| 
+|7192A1E4A| 
+|7417A002A| 
+|7417A003A| 
+|7499A058 | 
+|7610A2J5A| 
+|7693A006F| 
+|7693A006G| 
+|7851AD70A| 
++---------+ 
+ 
+================================================================================ 
+LOTS ONLY IN FABRIC 
+================================================================================ 
++---+ 
+|LOT| 
++---+ 
++---+ 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Key-based comparison using (LOT, DATE_TIME, HISTORDER): 
+#  - common_keys   : keys in both Prod and Fabric 
+#  - prod_missing  : keys in Prod but not in Fabric 
+#  - fabric_missing: keys in Fabric but not in Prod 
+# Then list distinct LOTs associated with missing keys on each side. 
+ 
+print("\n" + "=" * 80) 
+print("KEY COMPARISON (LOT, DATE_TIME, HISTORDER)") 
+print("=" * 80) 
+ 
+common_keys = df_Prod.join( 
+    df_Fabric, 
+    key_cols, 
+    "inner" 
+) 
+ 
+prod_missing = df_Prod.join( 
+    df_Fabric, 
+    key_cols, 
+    "left_anti" 
+) 
+ 
+fabric_missing = df_Fabric.join( 
+    df_Prod, 
+    key_cols, 
+    "left_anti" 
+) 
+ 
+print("Common Keys      :", common_keys.count()) 
+print("Prod Missing     :", prod_missing.count()) 
+print("Fabric Missing   :", fabric_missing.count()) 
+ 
+print("\n" + "=" * 80) 
+print("DISTINCT LOTS MISSING IN FABRIC") 
+print("=" * 80) 
+ 
+prod_missing.select("LOT") \ 
+    .distinct() \ 
+    .orderBy("LOT") \ 
+    .show(1000, False) 
+ 
+print("\n" + "=" * 80) 
+print("DISTINCT LOTS MISSING IN PROD") 
+print("=" * 80) 
+ 
+fabric_missing.select("LOT") \ 
+    .distinct() \ 
+    .orderBy("LOT") \ 
+    .show(1000, False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+KEY COMPARISON (LOT, DATE_TIME, HISTORDER) 
+================================================================================ 
+Common Keys      : 11994 
+Prod Missing     : 183 
+Fabric Missing   : 0 
+ 
+================================================================================ 
+DISTINCT LOTS MISSING IN FABRIC 
+================================================================================ 
++---------+ 
+|LOT      | 
++---------+ 
+|5208A020A| 
+|5245A001A| 
+|5325A234A| 
+|5441A001 | 
+|5451A0A7A| 
+|5539A1Q7A| 
+|5630A001A| 
+|5630A002A| 
+|5819A026A| 
+|5822A061A| 
+|6121A001A| 
+|6339A2H0A| 
+|6339A2J3A| 
+|6339A2K9A| 
+|6554A0A0 | 
+|6782A001A| 
+|6794A001N| 
+|6794A002K| 
+|6794A007B| 
+|7192A1E4A| 
+|7417A002A| 
+|7417A003A| 
+|7499A058 | 
+|7610A2J5A| 
+|7693A006F| 
+|7693A006G| 
+|7851AD70A| 
++---------+ 
+ 
+================================================================================ 
+DISTINCT LOTS MISSING IN PROD 
+================================================================================ 
++---+ 
+|LOT| 
++---+ 
++---+ 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Compare distribution of HISTCODE between Prod and Fabric. 
+# For each HISTCODE, show counts in each system and the difference. 
+ 
+print("\n" + "=" * 80) 
+print("HISTCODE COMPARISON") 
+print("=" * 80) 
+ 
+prod_hist = ( 
+    df_Prod.groupBy("HISTCODE") 
+    .count() 
+    .withColumnRenamed("count", "prod_count") 
+) 
+ 
+fabric_hist = ( 
+    df_Fabric.groupBy("HISTCODE") 
+    .count() 
+    .withColumnRenamed("count", "fabric_count") 
+) 
+ 
+hist_compare = ( 
+    prod_hist.join( 
+        fabric_hist, 
+        "HISTCODE", 
+        "full" 
+    ) 
+    .fillna(0) 
+    .withColumn( 
+        "difference", 
+        F.col("fabric_count") - F.col("prod_count") 
+    ) 
+) 
+ 
+hist_compare.orderBy( 
+    F.desc(F.abs(F.col("difference"))) 
+).show(100, False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+HISTCODE COMPARISON 
+================================================================================ 
++--------+----------+------------+----------+ 
+|HISTCODE|prod_count|fabric_count|difference| 
++--------+----------+------------+----------+ 
+|LL      |1137      |1089        |-48       | 
+|CM      |3594      |3549        |-45       | 
+|TX      |449       |436         |-13       | 
+|DL      |391       |379         |-12       | 
+|SR      |383       |372         |-11       | 
+|OI      |408       |398         |-10       | 
+|IN      |359       |350         |-9        | 
+|CS      |293       |286         |-7        | 
+|RS      |185       |180         |-5        | 
+|AR      |218       |214         |-4        | 
+|LA      |353       |349         |-4        | 
+|MV      |352       |348         |-4        | 
+|HC      |50        |47          |-3        | 
+|WM      |274       |271         |-3        | 
+|UD      |52        |50          |-2        | 
+|RP      |28        |27          |-1        | 
+|SE      |29        |28          |-1        | 
+|SK      |29        |28          |-1        | 
+|AA      |2         |2           |0         | 
+|AS      |30        |30          |0         | 
+|CR      |23        |23          |0         | 
+|DD      |21        |21          |0         | 
+|DK      |214       |214         |0         | 
+|EM      |94        |94          |0         | 
+|EN      |94        |94          |0         | 
+|HT      |23        |23          |0         | 
+|KL      |176       |176         |0         | 
+|KW      |176       |176         |0         | 
+|LB      |6         |6           |0         | 
+|LC      |19        |19          |0         | 
+|MR      |18        |18          |0         | 
+|OC      |1         |1           |0         | 
+|OP      |5         |5           |0         | 
+|OW      |23        |23          |0         | 
+|PS      |13        |13          |0         | 
+|PT      |33        |33          |0         | 
+|R1      |1         |1           |0         | 
+|RA      |1         |1           |0         | 
+|RB      |17        |17          |0         | 
+|RE      |23        |23          |0         | 
+|RH      |17        |17          |0         | 
+|RM      |1         |1           |0         | 
+|RT      |199       |199         |0         | 
+|RW      |1         |1           |0         | 
+|SO      |2         |2           |0         | 
+|TN      |23        |23          |0         | 
+|UX      |3         |3           |0         | 
+|VA      |23        |23          |0         | 
+|WF      |2         |2           |0         | 
+|WR      |21        |21          |0         | 
++--------+----------+------------+----------+ 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Compare distribution of OPER between Prod and Fabric. 
+# Shows per-operation event counts in both systems to validate consistency. 
+ 
+print("\n" + "=" * 80) 
+print("OPER DISTRIBUTION") 
+print("=" * 80) 
+ 
+oper_compare = ( 
+    df_Prod.groupBy("OPER") 
+    .count() 
+    .withColumnRenamed("count", "prod_count") 
+    .join( 
+        df_Fabric.groupBy("OPER") 
+        .count() 
+        .withColumnRenamed("count", "fabric_count"), 
+        "OPER", 
+        "full" 
+    ) 
+    .fillna(0) 
+) 
+ 
+oper_compare.orderBy("OPER").show(500, False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+OPER DISTRIBUTION 
+================================================================================ 
++-----+----------+------------+ 
+|OPER |prod_count|fabric_count| 
++-----+----------+------------+ 
+|-100 |1100      |1100        | 
+|20002|5         |5           | 
+|20099|52        |52          | 
+|21069|9         |9           | 
+|21070|19        |19          | 
+|22188|6         |6           | 
+|22741|95        |95          | 
+|24320|4         |4           | 
+|25130|11        |11          | 
+|25144|7         |7           | 
+|27544|10        |10          | 
+|40200|31        |31          | 
+|40203|2         |2           | 
+|40204|8         |8           | 
+|40205|4         |4           | 
+|40206|6         |6           | 
+|40207|19        |19          | 
+|40209|19        |19          | 
+|40210|4         |4           | 
+|40211|20        |20          | 
+|40213|25        |25          | 
+|40214|12        |12          | 
+|40216|6         |6           | 
+|40218|8         |8           | 
+|40220|10        |10          | 
+|40221|1         |1           | 
+|40224|15        |15          | 
+|40300|1         |1           | 
+|40302|10        |10          | 
+|40303|11        |11          | 
+|40304|12        |12          | 
+|40305|6         |6           | 
+|40306|13        |13          | 
+|40307|14        |14          | 
+|40309|3         |3           | 
+|40310|5         |5           | 
+|40311|8         |8           | 
+|40312|12        |12          | 
+|40313|15        |15          | 
+|40316|16        |16          | 
+|40320|12        |12          | 
+|40321|3         |3           | 
+|40323|13        |13          | 
+|40328|3         |3           | 
+|40329|8         |8           | 
+|40349|10        |10          | 
+|40351|38        |38          | 
+|40352|68        |68          | 
+|40353|14        |14          | 
+|40354|62        |62          | 
+|40355|22        |17          | 
+|40356|72        |72          | 
+|40357|7         |7           | 
+|40358|9         |9           | 
+|40360|52        |52          | 
+|40363|38        |38          | 
+|40366|17        |17          | 
+|40368|8         |8           | 
+|40404|23        |23          | 
+|40405|3         |3           | 
+|40406|2         |2           | 
+|40407|19        |19          | 
+|40410|3         |3           | 
+|40413|5         |5           | 
+|40414|9         |9           | 
+|40416|5         |5           | 
+|40421|28        |28          | 
+|40422|4         |4           | 
+|40502|12        |12          | 
+|40503|21        |21          | 
+|40504|26        |26          | 
+|40508|4         |4           | 
+|40510|10        |10          | 
+|40600|7         |7           | 
+|40601|3         |3           | 
+|40606|3         |3           | 
+|40610|5         |5           | 
+|40636|4         |4           | 
+|45005|5         |5           | 
+|45011|4         |4           | 
+|45013|5         |5           | 
+|45017|6         |6           | 
+|45018|13        |13          | 
+|49749|12        |12          | 
+|49802|4         |4           | 
+|49803|1         |1           | 
+|49804|23        |23          | 
+|49805|11        |11          | 
+|49806|3         |3           | 
+|49807|18        |18          | 
+|49808|5         |5           | 
+|49809|43        |43          | 
+|49810|15        |15          | 
+|49813|6         |6           | 
+|49814|14        |14          | 
+|49815|7         |7           | 
+|49817|9         |9           | 
+|49821|8         |8           | 
+|49822|3         |3           | 
+|49823|2         |2           | 
+|49826|4         |4           | 
+|49828|4         |4           | 
+|49900|23        |23          | 
+|49902|11        |11          | 
+|49903|16        |16          | 
+|49904|10        |10          | 
+|49906|2         |2           | 
+|49907|28        |28          | 
+|49909|1         |1           | 
+|49910|20        |20          | 
+|49912|1         |1           | 
+|49915|1         |1           | 
+|49917|2         |2           | 
+|49918|11        |11          | 
+|49920|2         |2           | 
+|49921|7         |7           | 
+|49932|10        |8           | 
+|49942|18        |18          | 
+|49951|12        |12          | 
+|49960|25        |25          | 
+|49961|1         |1           | 
+|49963|12        |8           | 
+|49964|1         |1           | 
+|49976|3         |3           | 
+|50100|22        |22          | 
+|50102|18        |18          | 
+|50103|21        |21          | 
+|50104|10        |10          | 
+|50105|4         |4           | 
+|50106|57        |57          | 
+|50107|29        |29          | 
+|50108|18        |18          | 
+|50109|8         |8           | 
+|50110|18        |18          | 
+|50111|4         |4           | 
+|50112|26        |26          | 
+|50113|14        |14          | 
+|50117|4         |4           | 
+|50118|10        |10          | 
+|50119|4         |4           | 
+|50120|29        |29          | 
+|50121|4         |4           | 
+|50122|41        |41          | 
+|50133|6         |6           | 
+|50141|26        |26          | 
+|50151|21        |21          | 
+|50152|20        |14          | 
+|50153|6         |6           | 
+... 
+(remaining OPER values continue similarly) 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Compare EMPID distribution: number of records per EMPID in each system. 
+# Validates that events are attributed to employees in similar proportions. 
+ 
+print("\n" + "=" * 80) 
+print("EMPID DISTRIBUTION") 
+print("=" * 80) 
+ 
+empid_compare = ( 
+    df_Prod.groupBy("EMPID") 
+    .count() 
+    .withColumnRenamed("count", "prod_count") 
+    .join( 
+        df_Fabric.groupBy("EMPID") 
+        .count() 
+        .withColumnRenamed("count", "fabric_count"), 
+        "EMPID", 
+        "full" 
+    ) 
+    .fillna(0) 
+) 
+ 
+empid_compare.orderBy( 
+    F.desc("fabric_count") 
+).show(100, False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+EMPID DISTRIBUTION 
+================================================================================ 
++-----+----------+------------+ 
+|EMPID|prod_count|fabric_count| 
++-----+----------+------------+ 
+|5493 |1656      |1656        | 
+|SYSTM|1701      |1634        | 
+|0    |1638      |1610        | 
+|3414 |1142      |1142        | 
+|99999|367       |351         | 
+|3761 |195       |186         | 
+|5780 |164       |164         | 
+|4176 |152       |147         | 
+|5668 |147       |147         | 
+|5147 |139       |139         | 
+|8308 |134       |134         | 
+|5666 |126       |126         | 
+|3734 |106       |105         | 
+|6105 |102       |102         | 
+|14020|96        |96          | 
+|5873 |95        |95          | 
+|5636 |91        |91          | 
+|8445 |89        |89          | 
+|3806 |88        |88          | 
+|6012 |93        |84          | 
+|5534 |79        |79          | 
+|5685 |76        |75          | 
+|6003 |64        |64          | 
+|5417 |62        |62          | 
+|4518 |59        |59          | 
+|8192 |59        |59          | 
+|6119 |57        |57          | 
+|5664 |55        |55          | 
+|8081 |55        |55          | 
+|6002 |57        |54          | 
+|6137 |53        |53          | 
+|14028|52        |52          | 
+|3194 |52        |52          | 
+|5793 |56        |50          | 
+|4895 |54        |49          | 
+|5540 |48        |48          | 
+|14050|55        |43          | 
+|6062 |48        |41          | 
+|6021 |40        |40          | 
+|6049 |40        |40          | 
+|5703 |39        |39          | 
+|5246 |36        |36          | 
+|5451 |35        |30          | 
+|5469 |28        |28          | 
+|6076 |29        |27          | 
+|5818 |23        |23          | 
+|5860 |23        |23          | 
+|4167 |21        |21          | 
+|4117 |17        |17          | 
+|4452 |19        |17          | 
+|5910 |17        |17          | 
+|8369 |15        |15          | 
+|6019 |13        |13          | 
+|4343 |12        |12          | 
+|5151 |12        |12          | 
+|4857 |11        |11          | 
+|14023|10        |10          | 
+|5847 |15        |10          | 
+|6159 |8         |8           | 
+|2359 |7         |7           | 
+|6067 |7         |7           | 
+|2831 |5         |5           | 
+|3511 |5         |5           | 
+|3692 |5         |5           | 
+|3994 |5         |5           | 
+|3398 |4         |4           | 
+|4984 |4         |4           | 
+|5500 |4         |4           | 
+|6148 |4         |4           | 
+|4488 |3         |3           | 
+|5912 |3         |3           | 
+|14071|2         |2           | 
+|4398 |2         |2           | 
+|5626 |2         |2           | 
+|5986 |1         |1           | 
+|N2152|1         |1           | 
++-----+----------+------------+ 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Compare MACHINE distribution between Prod and Fabric. 
+# Shows how many records are associated with each machine/tool in each system. 
+ 
+print("\n" + "=" * 80) 
+print("MACHINE DISTRIBUTION") 
+print("=" * 80) 
+ 
+machine_compare = ( 
+    df_Prod.groupBy("MACHINE") 
+    .count() 
+    .withColumnRenamed("count", "prod_count") 
+    .join( 
+        df_Fabric.groupBy("MACHINE") 
+        .count() 
+        .withColumnRenamed("count", "fabric_count"), 
+        "MACHINE", 
+        "full" 
+    ) 
+    .fillna(0) 
+) 
+ 
+machine_compare.orderBy("MACHINE").show(500, False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+MACHINE DISTRIBUTION 
+================================================================================ 
++-----------------+----------+------------+ 
+|MACHINE          |prod_count|fabric_count| 
++-----------------+----------+------------+ 
+|NULL             |4258      |0           | 
+|NULL             |0         |4217        | 
+|ALPHA307         |18        |18          | 
+|ALPHA318         |12        |12          | 
+|ALPHA806         |9         |9           | 
+|AME10            |19        |19          | 
+|AME15            |24        |24          | 
+|AME19            |2         |2           | 
+|AME20            |25        |25          | 
+|AME21            |9         |9           | 
+|AME22            |11        |11          | 
+|AME23            |3         |3           | 
+|AME312           |14        |14          | 
+|AME314           |6         |6           | 
+|AME317           |7         |7           | 
+|AME324           |2         |2           | 
+|AME325           |1         |1           | 
+|AME326           |13        |13          | 
+|AME327           |5         |5           | 
+|AME328           |18        |18          | 
+|ASML100-301      |25        |25          | 
+|ASML100-304      |13        |13          | 
+|ASML100-305      |2         |2           | 
+|ASML100-308      |23        |23          | 
+|ASML100-318      |28        |28          | 
+|ASML100-319      |13        |13          | 
+|ATLAS305         |267       |241         | 
+|BLAP NOTCH FINDER|8         |8           | 
+|CDSEM304         |2         |2           | 
+|CMP2             |15        |15          | 
+|CMP3             |15        |15          | 
+|CMP4             |58        |58          | 
+|CMP6             |17        |17          | 
+|CURE302          |12        |12          | 
+|DETAPE103        |7         |7           | 
+|ECLIPSE106       |24        |24          | 
+|ELIPS10          |114       |114         | 
+|ELIPS311         |247       |236         | 
+|ENDURA211        |7         |7           | 
+|ENDURA306        |8         |8           | 
+|ENDURA307        |3         |3           | 
+|ENDURA309        |13        |13          | 
+|ENDURA5          |6         |6           | 
+|EPI12            |3         |3           | 
+|EPI6             |1         |1           | 
+|EPI8             |4         |4           | 
+|FLEX1            |7         |7           | 
+|FUSION302        |14        |14          | 
+|FUSION304        |7         |7           | 
+|FUSION305        |16        |16          | 
+|FUSION306        |13        |13          | 
+|FUSION307        |11        |11          | 
+|FUSION310        |15        |15          | 
+|GRIND104         |13        |13          | 
+|GSD1             |4         |4           | 
+|GSD2             |8         |8           | 
+|GSD4             |20        |20          | 
+|GSD5             |17        |11          | 
+|GSD7             |5         |5           | 
+|HD302            |15        |15          | 
+|HDP301           |24        |24          | 
+|INSP309          |115       |115         | 
+|INSP311          |66        |65          | 
+|INSP312          |13        |13          | 
+|INSP315          |79        |79          | 
+|IVS303           |26        |26          | 
+|IVS304           |57        |55          | 
+|IVS305           |4         |2           | 
+|KEITHLY12        |7         |7           | 
+|KEITHLY3         |10        |10          | 
+|KEITHLY4         |13        |13          | 
+|KEITHLY6         |3         |3           | 
+|KLA8935-302      |57        |57          | 
+|KLA8935-303      |3         |3           | 
+|KLARITY_DEFECT   |89        |89          | 
+|KLASEM301        |177       |177         | 
+|KLASP1-301       |36        |36          | 
+|KLASP1-302       |45        |45          | 
+|LINK-15          |2         |2           | 
+|LINK-16          |6         |6           | 
+|LINK-303         |61        |61          | 
+|LINK-304         |52        |52          | 
+|LINK-306         |84        |84          | 
+|LINK-307         |42        |42          | 
+|LINK-308         |66        |66          | 
+|LINK-309         |63        |63          | 
+|LINK-310         |38        |38          | 
+|LINK-311         |26        |26          | 
+|LINK-312         |76        |76          | 
+|LINK-313         |60        |60          | 
+|LINK-320         |25        |25          | 
+|LINK-321         |14        |14          | 
+|MERCURY1         |29        |29          | 
+|MERCURY10        |44        |44          | 
+|MERCURY3         |28        |28          | 
+|MERCURY302       |59        |51          | 
+|MERCURY306       |26        |24          | 
+|MERCURY311       |62        |60          | 
+|MERCURY312       |66        |62          | 
+|MERCURY313       |19        |19          | 
+|MERCURY314       |48        |48          | 
+|MERCURY315       |23        |23          | 
+|MERCURY316       |46        |46          | 
+|MERCURY317       |16        |16          | 
+|MERCURY318       |50        |50          | 
+|MERCURY5         |50        |50          | 
+|MERCURY8         |51        |51          | 
+|METAL_TEST       |6         |6           | 
+|MRL15.1          |91        |91          | 
+|MRL15.2          |8         |8           | 
+|MRL16.3          |40        |32          | 
+|MRL17.2          |3         |3           | 
+|MRL17.3          |5         |5           | 
+|MRL22.2          |27        |27          | 
+|MRL22.4          |149       |115         | 
+... 
+(remaining machines continue similarly) 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Compute high-level summary metrics for each dataset: 
+#  - total rows, distinct lots, operations, users, machines, and empids. 
+ 
+print("\n" + "=" * 80) 
+print("SUMMARY METRICS") 
+print("=" * 80) 
+ 
+agg_prod = df_Prod.select( 
+    F.count("*").alias("rows"), 
+    F.countDistinct("LOT").alias("lots"), 
+    F.countDistinct("OPER").alias("opers"), 
+    F.countDistinct("USERNAME").alias("users"), 
+    F.countDistinct("MACHINE").alias("machines"), 
+    F.countDistinct("EMPID").alias("empids") 
+) 
+ 
+agg_fabric = df_Fabric.select( 
+    F.count("*").alias("rows"), 
+    F.countDistinct("LOT").alias("lots"), 
+    F.countDistinct("OPER").alias("opers"), 
+    F.countDistinct("USERNAME").alias("users"), 
+    F.countDistinct("MACHINE").alias("machines"), 
+    F.countDistinct("EMPID").alias("empids") 
+) 
+ 
+print("Prod Summary") 
+agg_prod.show(truncate=False) 
+ 
+print("Fabric Summary") 
+agg_fabric.show(truncate=False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+SUMMARY METRICS 
+================================================================================ 
+Prod Summary 
++----+----+-----+-----+--------+------+ 
+|rows|lots|opers|users|machines|empids| 
++----+----+-----+-----+--------+------+ 
+|9889|1257|460  |235  |190     |76    | 
++----+----+-----+-----+--------+------+ 
+ 
+Fabric Summary 
++----+----+-----+-----+--------+------+ 
+|rows|lots|opers|users|machines|empids| 
++----+----+-----+-----+--------+------+ 
+|9706|1230|460  |235  |190     |76    | 
++----+----+-----+-----+--------+------+ 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# On rows matched by key (LOT, DATE_TIME, HISTORDER), 
+# count how many rows have mismatching values in key attributes: 
+#  OPER, descriptions, TRANS, HIST_REC, MACHINE, USERNAME, COMMAND, EMPID. 
+ 
+print("\n" + "=" * 80) 
+print("ATTRIBUTE MISMATCH ANALYSIS") 
+print("=" * 80) 
+ 
+cols_to_compare = [ 
+    "OPER", 
+    "OPERDESC", 
+    "OPERLONGDESC", 
+    "TRANS", 
+    "HIST_REC", 
+    "MACHINE", 
+    "USERNAME", 
+    "COMMAND", 
+    "EMPID" 
+] 
+ 
+compare = ( 
+    df_Prod.alias("p") 
+    .join( 
+        df_Fabric.alias("f"), 
+        key_cols 
+    ) 
+) 
+ 
+mismatch_summary = compare.agg(*[ 
+    F.sum( 
+        F.when( 
+            F.coalesce(F.col(f"p.{c}"), F.lit("")) != 
+            F.coalesce(F.col(f"f.{c}"), F.lit("")), 
+            1 
+        ).otherwise(0) 
+    ).alias(f"{c}_MISMATCH") 
+    for c in cols_to_compare 
+]) 
+ 
+mismatch_summary.show(truncate=False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+ATTRIBUTE MISMATCH ANALYSIS 
+================================================================================ 
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+ 
+|OPER_MISMATCH|OPERDESC_MISMATCH|OPERLONGDESC_MISMATCH|TRANS_MISMATCH|HIST_REC_MISMATCH|MACHINE_MISMATCH|USERNAME_MISMATCH|COMMAND_MISMATCH|EMPID_MISMATCH| 
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+ 
+|6            |6                |6                    |1418          |1950             |22              |26               |260             |0             | 
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+ 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Show a detailed sample (up to 200 rows) where TRANS differs between Prod and Fabric, 
+# along with key fields and both TRANS values, to inspect transformation differences. 
+ 
+print("\n" + "=" * 80) 
+print("TRANS MISMATCH SAMPLE") 
+print("=" * 80) 
+ 
+compare.filter( 
+    F.coalesce(F.col("p.TRANS"), F.lit("")) != 
+    F.coalesce(F.col("f.TRANS"), F.lit("")) 
+).select( 
+    "LOT", 
+    "DATE_TIME", 
+    "HISTORDER", 
+    F.col("p.TRANS").alias("PROD_TRANS"), 
+    F.col("f.TRANS").alias("FABRIC_TRANS") 
+).show(200, False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+TRANS MISMATCH SAMPLE 
+================================================================================ 
++----------+---------+---------+----------+------------+ 
+|LOT       |DATE_TIME|HISTORDER|PROD_TRANS|FABRIC_TRANS| 
++----------+---------+---------+----------+------------+ 
+|7480A135  |15:38.5  |1        |WAIT MVOU |COMMENT     | 
+|7480A135  |15:38.5  |1        |COMMENT   |WAIT MVOU   | 
+|6814A052  |15:38.7  |1        |WAIT MVOU |COMMENT     | 
+|6814A052  |15:38.7  |1        |COMMENT   |WAIT MVOU   | 
+|6211A062  |15:38.9  |1        |WAIT MVOU |COMMENT     | 
+|6211A062  |15:38.9  |1        |COMMENT   |WAIT MVOU   | 
+|7225ABU5  |15:39.1  |1        |WAIT MVOU |COMMENT     | 
+|7225ABU5  |15:39.1  |1        |COMMENT   |WAIT MVOU   | 
+|7985A1N3  |15:47.1  |1        |DISPATCH  |COMMENT     | 
+|7985A1N3  |15:47.1  |1        |COMMENT   |DISPATCH    | 
+|7347A0D3  |15:51.3  |1        |HOLD CODE |REPOSITION  | 
+|7347A0D3  |15:51.3  |1        |HOLD CODE |COMMENT     | 
+|7347A0D3  |15:51.3  |1        |REPOSITION|HOLD CODE   | 
+|7347A0D3  |15:51.3  |1        |REPOSITION|COMMENT     | 
+|7347A0D3  |15:51.3  |1        |COMMENT   |HOLD CODE   | 
+|7347A0D3  |15:51.3  |1        |COMMENT   |REPOSITION  | 
+... 
+only showing top 200 rows 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Show a detailed sample (up to 200 rows) where COMMAND differs between Prod and Fabric, 
+# including the key fields and both command values for investigation. 
+ 
+print("\n" + "=" * 80) 
+print("COMMAND MISMATCH SAMPLE") 
+print("=" * 80) 
+ 
+compare.filter( 
+    F.coalesce(F.col("p.COMMAND"), F.lit("")) != 
+    F.coalesce(F.col("f.COMMAND"), F.lit("")) 
+).select( 
+    "LOT", 
+    "DATE_TIME", 
+    "HISTORDER", 
+    F.col("p.COMMAND").alias("PROD_COMMAND"), 
+    F.col("f.COMMAND").alias("FABRIC_COMMAND") 
+).show(200, False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+COMMAND MISMATCH SAMPLE 
+================================================================================ 
++----------+---------+---------+------------+--------------+ 
+|LOT       |DATE_TIME|HISTORDER|PROD_COMMAND|FABRIC_COMMAND| 
++----------+---------+---------+------------+--------------+ 
+|7347A0D3  |15:51.3  |1        |HOLD        |RPOS          | 
+|7347A0D3  |15:51.3  |1        |HOLD        |RPOS          | 
+|7347A0D3  |15:51.3  |1        |RPOS        |HOLD          | 
+|7347A0D3  |15:51.3  |1        |RPOS        |HOLD          | 
+|7412A0D7B |16:01.9  |1        |LMVR        |MVIN          | 
+|7412A0D7B |16:01.9  |1        |LMVR        |MVIN          | 
+|7412A0D7B |16:01.9  |1        |MVIN        |LMVR          | 
+|7412A0D7B |16:01.9  |1        |MVIN        |LMVR          | 
+|5500A002  |16:49.1  |1        |LMVR        |MVIN          | 
+|5500A002  |16:49.1  |1        |LMVR        |MVIN          | 
+|5500A002  |16:49.1  |1        |MVIN        |LMVR          | 
+|5500A002  |16:49.1  |1        |MVIN        |LMVR          | 
+|5941A105  |17:30.2  |1        |LMVR        |MVIN          | 
+|5941A105  |17:30.2  |1        |LMVR        |MVIN          | 
+|5941A105  |17:30.2  |1        |MVIN        |LMVR          | 
+|5941A105  |17:30.2  |1        |MVIN        |LMVR          | 
+... 
+only showing top 200 rows 
+ 
+
+ 
+ 
+ 
+
+Python 
+
+# LOGIC: 
+# Show a detailed sample (up to 200 rows) where HIST_REC differs between Prod and Fabric, 
+# to inspect differences in history text splitting, ordering, or content. 
+ 
+print("\n" + "=" * 80) 
+print("HIST_REC MISMATCH SAMPLE") 
+print("=" * 80) 
+ 
+compare.filter( 
+    F.coalesce(F.col("p.HIST_REC"), F.lit("")) != 
+    F.coalesce(F.col("f.HIST_REC"), F.lit("")) 
+).select( 
+    "LOT", 
+    "DATE_TIME", 
+    "HISTORDER", 
+    F.col("p.HIST_REC").alias("PROD_HIST_REC"), 
+    F.col("f.HIST_REC").alias("FABRIC_HIST_REC") 
+).show(200, False) 
+ 
+
+ 
+ 
+
+Text 
+
+================================================================================ 
+HIST_REC MISMATCH SAMPLE 
+================================================================================ 
++----------+---------+---------+----------------------------------------+----------------------------------------+ 
+|LOT       |DATE_TIME|HISTORDER|PROD_HIST_REC                           |FABRIC_HIST_REC                         | 
++----------+---------+---------+----------------------------------------+----------------------------------------+ 
+|7480A135  |15:38.5  |1        |QTY: 25                                 |Automated Move                          | 
+|7480A135  |15:38.5  |1        |Automated Move                          |QTY: 25                                 | 
+|6814A052  |15:38.7  |1        |QTY: 25                                 |Automated Move                          | 
+|6814A052  |15:38.7  |1        |Automated Move                          |QTY: 25                                 | 
+|6211A062  |15:38.9  |1        |QTY: 25                                 |Automated Move                          | 
+|6211A062  |15:38.9  |1        |Automated Move                          |QTY: 25                                 | 
+|7225ABU5  |15:39.1  |1        |QTY: 25                                 |Automated Move                          | 
+|7225ABU5  |15:39.1  |1        |Automated Move                          |QTY: 25                                 | 
+|7985A1N3  |15:47.1  |1        |QTY: 25                                 |Dispatched by Local Rules.              | 
+|7985A1N3  |15:47.1  |1        |Dispatched by Local Rules.              |QTY: 25                                 | 
+... 
+only showing top 200 rows 
+ 
+
+ 
+
+ 
