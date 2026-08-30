@@ -1,32 +1,80 @@
-Production DB view –[TrainingVision].[dbo.LOTHISTV] 
+<h1 align="center" style="color: #1a365d;">📊 Production DB vs. Fabric Data Validation & Reconciliation Report</h1>
 
+---
 
+<h2 style="color: #2b6cb0;">📋 1. Scope & Execution Metadata</h2>
 
-Fabric view –[Polar_Warehouse].[TrainingVision].[LotHistV] 
+<div style="background-color: #f7fafc; padding: 15px; border-left: 5px solid #3182ce; border-radius: 4px; margin-bottom: 20px;">
+  <p style="margin: 4px 0;"><b>🗄️ Production DB View:</b> <code style="color: #c53030; background-color: #fff5f5; padding: 2px 6px; border-radius: 3px;">[TrainingVision].[dbo.LOTHISTV]</code></p>
+  <p style="margin: 4px 0;"><b>☁️ Fabric View:</b> <code style="color: #2b6cb0; background-color: #ebf8ff; padding: 2px 6px; border-radius: 3px;">[Polar_Warehouse].[TrainingVision].[LotHistV]</code></p>
+  <p style="margin: 4px 0;"><b>⏱️ Filter Time Window:</b> <code style="color: #22543d; background-color: #f0fff4; padding: 2px 6px; border-radius: 3px;">DATETIME >= '2026-08-10 10:15:00' AND DATE_TIME < '2026-08-10 11:00:00'</code></p>
+</div>
 
+---
 
+<h2 style="color: #2b6cb0;">📌 2. Detailed Observations, Root Cause Analysis & Recommendations</h2>
 
- 
-Time stamp: DATETIME >= ‘2026-08-10 10:15:00’ AND 
-	DATE_TIME < ‘2026-08-10 11:00:00’ 
+<h3 style="color: #2c5282;">A. Summary of Key Findings & Data Discrepancies</h3>
+<ul>
+  <li><span style="color: #e53e3e; font-weight: bold;">Volume Imbalance:</span> The Production view contains <b>10,023</b> records, while the Fabric warehouse copy contains <b>9,841</b> records (-182 net difference).</li>
+  <li><span style="color: #38a169; font-weight: bold;">Common Match Rate:</span> Exact intersect row-level match is <b>9,673</b> rows, representing <b>96.51%</b> of Production records.</li>
+  <li><span style="color: #dd6b20; font-weight: bold;">Orphaned / Extra Records:</span>
+    <ul>
+      <li><b>182 rows</b> exist <i>only in Production</i> and failed to land in Fabric.</li>
+      <li><b>0 rows</b> exist <i>only in Fabric</i> and do not match the current Production view.</li>
+    </ul>
+  </li>
+  <li><span style="color: #805ad5; font-weight: bold;">Higher Production Cardinality:</span> Production has higher distinct counts for Lots (<b>1,294</b> vs <b>1,265</b>) due to <b>29 missing LOTs</b> in Fabric.</li>
+  <li><span style="color: #d69e2e; font-weight: bold;">Exact Duplicates:</span> Production contains <b>168 duplicate rows</b>; Fabric contains <b>168 duplicate rows</b>.</li>
+</ul>
 
- 
+<h3 style="color: #2c5282;">B. Root Cause Analysis: Why Are There Duplicates and Missing/Extra Data?</h3>
 
- 
+<table style="width: 100%; border-collapse: collapse; margin: 15px 0;">
+  <thead>
+    <tr style="background-color: #2b6cb0; color: white; text-align: left;">
+      <th style="padding: 10px; border: 1px solid #cbd5e0;">Category</th>
+      <th style="padding: 10px; border: 1px solid #cbd5e0;">Observed Symptom</th>
+      <th style="padding: 10px; border: 1px solid #cbd5e0;">Probable Technical Root Cause</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr style="background-color: #f7fafc;">
+      <td style="padding: 8px; border: 1px solid #cbd5e0; font-weight: bold; color: #c53030;">Duplicate Keys</td>
+      <td style="padding: 8px; border: 1px solid #cbd5e0;">Composite key <code>[LOT, DATE_TIME, HISTORDER]</code> appears up to 5+ times for the same event in Prod & Fabric.</td>
+      <td style="padding: 8px; border: 1px solid #cbd5e0;"><b>1. Sub-second Timestamp Truncation:</b> <code>DATE_TIME</code> is stored without full microsecond precision, collapsing multiple atomic events into one second bucket.<br><b>2. View Fan-Out:</b> The SQL view joins tables without proper distinct deduplication.</td>
+    </tr>
+    <tr>
+      <td style="padding: 8px; border: 1px solid #cbd5e0; font-weight: bold; color: #dd6b20;">Data in Prod NOT in Fabric</td>
+      <td style="padding: 8px; border: 1px solid #cbd5e0;"><b>182 rows</b> and <b>29 unique LOTs</b> are present in Prod but missing from Fabric.</td>
+      <td style="padding: 8px; border: 1px solid #cbd5e0;"><b>1. Trailing Space Incompatibility:</b> Spark SQL matches LOT IDs strictly, while SQL Server ignores trailing spaces. LOT values like <code>6554A0A0 </code> fail to join and sync.<br><b>2. Character Suffix Filters:</b> Suffix characters (like `A`, `K`, `N`) may be truncated or filtered during migration.</td>
+    </tr>
+    <tr style="background-color: #f7fafc;">
+      <td style="padding: 8px; border: 1px solid #cbd5e0; font-weight: bold; color: #805ad5;">Attribute Payload Mismatches</td>
+      <td style="padding: 8px; border: 1px solid #cbd5e0;">Mismatches on keys: <b>2,204 HIST_REC</b>, <b>1,466 TRANS</b>, and <b>318 COMMAND</b>.</td>
+      <td style="padding: 8px; border: 1px solid #cbd5e0;"><b>Non-Deterministic Joins:</b> Because composite key <code>(LOT, DATE_TIME, HISTORDER)</code> contains duplicate records, Spark joins tables non-deterministically, transposing/shuffling values across duplicate rows.</td>
+    </tr>
+  </tbody>
+</table>
 
-Below is the code you ran in your notebook, broken into logical sections. 
-For each section I’ve added: 
+<h3 style="color: #2c5282;">C. Recommended Remediation Plan</h3>
+<ol>
+  <li><b>Standardize String Trimming:</b> Implement <code>TRIM(LOT)</code> across all view definitions and ingestion pipelines in Fabric to resolve trailing space discrepancies.</li>
+  <li><b>Add True Surrogate Keys:</b> Re-engineer the views to include auto-incrementing transaction sequence IDs (e.g. <code>TXN_SEQUENCE</code>) to resolve non-deterministic joins.</li>
+  <li><b>Verify Suffix Rules:</b> Inspect replication filter scripts to ensure LOT numbers ending with alphanumeric suffixes are not filtered out.</li>
+</ol>
 
-A comment describing the logic and what the data represents 
+---
 
-The query/code for that section 
+<h2 style="color: #2b6cb0;">💻 3. Notebook Cells: Code, Logic, Purpose & Results</h2>
 
-The result from the last run (from the cell output) 
+### 🔹 Cell 1
 
- 
+#### 🎯 Logic & Purpose
+Load two CSV extracts (Prod and Fabric) from the OneLake file system and count total row counts to validate basic volume alignment.
+* **Data represented:** Total row counts of `df_Prod` and `df_Fabric` for the hourly window.
 
-1. Load data + row counts 
-
+#### 💻 Code
 ```python
 # LOGIC: 
 # Load two CSV snapshots (Prod and Fabric) from the Lakehouse and compare 
@@ -58,11 +106,11 @@ print(f"Fabric Rows : {fabric_count}")
  
  
 
-Result: 
+Result:
 ```
 
+#### 📊 Result
 ```text
-### ROW COUNTS
 
 Prod Rows   : 10023 
 Fabric Rows : 9841 
@@ -72,9 +120,18 @@ Fabric Rows : 9841
  
  
 
-2. Distinct count profile for each column 
+2. Distinct count profile for each column
 ```
 
+---
+
+### 🔹 Cell 2
+
+#### 🎯 Logic & Purpose
+Profile cardinality by calculating distinct counts of unique values for each column in both datasets.
+* **Data represented:** Cardinality profile across all schema columns in Production and Fabric.
+
+#### 💻 Code
 ```python
 # LOGIC: 
 # For each column in Prod and Fabric, compute the number of distinct values. 
@@ -106,11 +163,11 @@ df_Fabric.select(
  
  
 
-Result (Prod distinct counts): 
+Result (Prod distinct counts):
 ```
 
+#### 📊 Result
 ```text
-### PROD DISTINCT COUNTS
 
 -RECORD 0------------ 
  LOT          | 1294  
@@ -136,40 +193,18 @@ Result (Prod distinct counts):
  
  
 
-Result (Fabric distinct counts): 
+Result (Fabric distinct counts):
 ```
 
-```text
-### FABRIC DISTINCT COUNTS
+---
 
--RECORD 0------------ 
- LOT          | 1265  
- DATE_TIME    | 2897  
- HISTORDER    | 198   
- TRANS        | 51    
- OPER         | 451   
- MASK_LVL     | 69    
- OPERDESC     | 151   
- OPERLONGDESC | 544   
- MACHINE      | 191   
- USERNAME     | 272   
- HIST_REC     | 1776  
- HISTCODE     | 51    
- COMMAND      | 25    
- SHORTREPORT  | 2     
- VIEWFLAG     | 2     
- Is_Person    | 2     
- IS_DUPLICATE | 2     
- EMPID        | 86    
- 
+### 🔹 Cell 3
 
- 
- 
- 
+#### 🎯 Logic & Purpose
+Perform full row-level set operations (`intersect`, `exceptAll`) to check row duplication and exact matches.
+* **Data represented:** Exact matching rows, rows only in Production, rows only in Fabric, and duplicate record metrics.
 
-3. Full row comparison + match percentage + duplicates 
-```
-
+#### 💻 Code
 ```python
 # LOGIC: 
 # Compare full rows between Prod and Fabric: 
@@ -216,11 +251,11 @@ print("Fabric duplicates :", fabric_duplicates)
  
  
 
-Result: 
+Result:
 ```
 
+#### 📊 Result
 ```text
-### FULL ROW COMPARISON
 
 Common rows         : 9673 
 Only in Prod        : 182 
@@ -240,9 +275,18 @@ Fabric duplicates : 168
  
  
 
-4. Duplicate key analysis (LOT, DATE_TIME, HISTORDER) 
+4. Duplicate key analysis (LOT, DATE_TIME, HISTORDER)
 ```
 
+---
+
+### 🔹 Cell 4
+
+#### 🎯 Logic & Purpose
+Identify logical event duplicate groups in Production by grouping on the composite natural keys `(LOT, DATE_TIME, HISTORDER)`.
+* **Data represented:** Primary composite key combinations with occurrences greater than 1, sorted by frequency.
+
+#### 💻 Code
 ```python
 # LOGIC: 
 # Find keys (LOT, DATE_TIME, HISTORDER) that appear more than once in Prod. 
@@ -264,11 +308,11 @@ df_Prod.groupBy(*key_cols) \
  
  
 
-Result (top 50 duplicate keys in Prod): 
+Result (top 50 duplicate keys in Prod):
 ```
 
+#### 📊 Result
 ```text
-### DUPLICATE KEYS IN PROD
 
 +--------+---------+---------+-----+ 
 |LOT     |DATE_TIME|HISTORDER|count| 
@@ -331,9 +375,18 @@ only showing top 50 rows
  
  
 
-5. Null profile by column 
+5. Null profile by column
 ```
 
+---
+
+### 🔹 Cell 5
+
+#### 🎯 Logic & Purpose
+Compute the count of null values per column in both Production and Fabric DataFrames to profile data completeness.
+* **Data represented:** Null value count mapping across all schema columns.
+
+#### 💻 Code
 ```python
 # LOGIC: 
 # Count how many NULLs exist per column in each dataset. 
@@ -361,11 +414,11 @@ df_Fabric.select([
  
  
 
-Result (Prod nulls): 
+Result (Prod nulls):
 ```
 
+#### 📊 Result
 ```text
-### PROD NULL PROFILE
 
 -RECORD 0------------ 
  LOT          | 0     
@@ -391,40 +444,18 @@ Result (Prod nulls):
  
  
 
-Result (Fabric nulls): 
+Result (Fabric nulls):
 ```
 
-```text
-### FABRIC NULL PROFILE
+---
 
--RECORD 0------------ 
- LOT          | 0     
- DATE_TIME    | 0     
- HISTORDER    | 0     
- TRANS        | 0     
- OPER         | 0     
- MASK_LVL     | 0     
- OPERDESC     | 0     
- OPERLONGDESC | 0     
- MACHINE      | 3859  
- USERNAME     | 0     
- HIST_REC     | 0     
- HISTCODE     | 0     
- COMMAND      | 0     
- SHORTREPORT  | 0     
- VIEWFLAG     | 0     
- Is_Person    | 0     
- IS_DUPLICATE | 0     
- EMPID        | 0     
- 
+### 🔹 Cell 6
 
- 
- 
- 
+#### 🎯 Logic & Purpose
+Validate timestamp range boundaries in both environments by checking the minimum and maximum `DATE_TIME` values.
+* **Data represented:** Extremum timestamp boundaries in Production and Fabric.
 
-6. Date range comparison 
-```
-
+#### 💻 Code
 ```python
 # LOGIC: 
 # Compare the min and max DATE_TIME values between Prod and Fabric 
@@ -450,11 +481,11 @@ df_Fabric.select(
  
  
 
-Result: 
+Result:
 ```
 
+#### 📊 Result
 ```text
-### DATE RANGE COMPARISON
 
 Prod 
 +-------------+-------------+ 
@@ -475,9 +506,18 @@ Fabric
  
  
 
-7. Lots only in Prod / only in Fabric 
+7. Lots only in Prod / only in Fabric
 ```
 
+---
+
+### 🔹 Cell 7
+
+#### 🎯 Logic & Purpose
+Isolate the distinct lot numbers associated with rows unique to Production or Fabric.
+* **Data represented:** Unique LOTs present in Production but missing in Fabric, or vice versa.
+
+#### 💻 Code
 ```python
 # LOGIC: 
 # List distinct LOTs that exist only in Prod and only in Fabric. 
@@ -505,11 +545,11 @@ only_fabric.select("LOT") \
  
  
 
-Result (lots only in Prod): 
+Result (lots only in Prod):
 ```
 
+#### 📊 Result
 ```text
-### LOTS ONLY IN PROD
 
 +---------+ 
 |LOT      | 
@@ -549,25 +589,18 @@ Result (lots only in Prod):
  
  
 
-Result (lots only in Fabric): 
+Result (lots only in Fabric):
 ```
 
-```text
-### LOTS ONLY IN FABRIC
+---
 
-+---+ 
-|LOT| 
-+---+ 
-+---+ 
- 
+### 🔹 Cell 8
 
- 
- 
- 
+#### 🎯 Logic & Purpose
+Compare composite keys `(LOT, DATE_TIME, HISTORDER)` between datasets to find missing keys and associated LOT values.
+* **Data represented:** Common keys count, missing keys count, and distinct LOTs associated with missing keys.
 
-8. Key comparison (LOT, DATE_TIME, HISTORDER) and distinct missing lots 
-```
-
+#### 💻 Code
 ```python
 # LOGIC: 
 # Using the key columns, count: 
@@ -624,11 +657,11 @@ fabric_missing.select("LOT") \
  
  
 
-Result: 
+Result:
 ```
 
+#### 📊 Result
 ```text
-### KEY COMPARISON (LOT, DATE_TIME, HISTORDER)
 
 Common Keys      : 12691 
 Prod Missing     : 182 
@@ -638,69 +671,18 @@ Fabric Missing   : 0
  
  
 
-Result (distinct lots missing in Fabric): 
+Result (distinct lots missing in Fabric):
 ```
 
-```text
-### DISTINCT LOTS MISSING IN FABRIC
+---
 
-+---------+ 
-|LOT      | 
-+---------+ 
-|5245A001A| 
-|5630A001A| 
-|5630A003A| 
-|5704A326E| 
-|5801A009A| 
-|5822A061A| 
-|5941A0F5A| 
-|6098A0E1A| 
-|6121A001A| 
-|6226A081A| 
-|6352AC23D| 
-|6352AC45A| 
-|6554A0A0 | 
-|6554A0A1 | 
-|6794A001N| 
-|6794A007B| 
-|6951A016A| 
-|7192A1E4A| 
-|7417A001A| 
-|7499A054 | 
-|7499A055 | 
-|7579A1C3A| 
-|7610A2J5A| 
-|7693A006H| 
-|7693A006J| 
-|7851AD84A| 
-|7851AD89A| 
-|7974A005A| 
-|7974A005B| 
-+---------+ 
- 
+### 🔹 Cell 9
 
- 
- 
+#### 🎯 Logic & Purpose
+Analyze the distribution of records grouped by `HISTCODE` to highlight transaction-level variances.
+* **Data represented:** Event count frequency per HISTCODE and their respective delta variances.
 
-Result (distinct lots missing in Prod): 
-```
-
-```text
-### DISTINCT LOTS MISSING IN PROD
-
-+---+ 
-|LOT| 
-+---+ 
-+---+ 
- 
-
- 
- 
- 
-
-9. HISTCODE distribution comparison 
-```
-
+#### 💻 Code
 ```python
 # LOGIC: 
 # Compare how many records each HISTCODE has in Prod vs Fabric, 
@@ -743,11 +725,11 @@ hist_compare.orderBy(
  
  
 
-Result (excerpt): 
+Result (excerpt):
 ```
 
+#### 📊 Result
 ```text
-### HISTCODE COMPARISON
 
 +--------+----------+------------+----------+ 
 |HISTCODE|prod_count|fabric_count|difference| 
@@ -780,9 +762,18 @@ Result (excerpt):
  
  
 
-10. OPER distribution comparison 
+10. OPER distribution comparison
 ```
 
+---
+
+### 🔹 Cell 10
+
+#### 🎯 Logic & Purpose
+Compare the operation-level event counts grouped by the `OPER` column in both datasets.
+* **Data represented:** Event counts per operation step in Production and Fabric.
+
+#### 💻 Code
 ```python
 # LOGIC: 
 # Compare counts per OPER between Prod and Fabric, 
@@ -812,11 +803,11 @@ oper_compare.orderBy("OPER").show(500, False)
  
  
 
-Result (excerpt): 
+Result (excerpt):
 ```
 
+#### 📊 Result
 ```text
-### OPER DISTRIBUTION
 
 +-----+----------+------------+ 
 |OPER |prod_count|fabric_count| 
@@ -837,9 +828,18 @@ Result (excerpt):
 
  
 
-11. EMPID distribution comparison 
+11. EMPID distribution comparison
 ```
 
+---
+
+### 🔹 Cell 11
+
+#### 🎯 Logic & Purpose
+Evaluate event assignment consistency across personnel by comparing record counts per `EMPID`.
+* **Data represented:** Event count frequency per employee ID in both environments.
+
+#### 💻 Code
 ```python
 # LOGIC: 
 # Compare how many records each EMPID has in Prod vs Fabric, 
@@ -871,11 +871,11 @@ empid_compare.orderBy(
  
  
 
-Result (excerpt): 
+Result (excerpt):
 ```
 
+#### 📊 Result
 ```text
-### EMPID DISTRIBUTION
 
 +-----+----------+------------+ 
 |EMPID|prod_count|fabric_count| 
@@ -894,9 +894,18 @@ Result (excerpt):
  
  
 
-12. MACHINE distribution comparison 
+12. MACHINE distribution comparison
 ```
 
+---
+
+### 🔹 Cell 12
+
+#### 🎯 Logic & Purpose
+Verify hardware-level activity by comparing record counts grouped by the `MACHINE` column.
+* **Data represented:** Event count distribution per machine/tool.
+
+#### 💻 Code
 ```python
 # LOGIC: 
 # Compare counts per MACHINE between Prod and Fabric, 
@@ -926,11 +935,11 @@ machine_compare.orderBy("MACHINE").show(500, False)
  
  
 
-Result (excerpt): 
+Result (excerpt):
 ```
 
+#### 📊 Result
 ```text
-### MACHINE DISTRIBUTION
 
 +--------------+----------+------------+ 
 |MACHINE       |prod_count|fabric_count| 
@@ -948,9 +957,18 @@ Result (excerpt):
  
  
 
-13. Summary metrics 
+13. Summary metrics
 ```
 
+---
+
+### 🔹 Cell 13
+
+#### 🎯 Logic & Purpose
+Calculate high-level summary metrics containing row, lot, oper, user, machine, and empid distinct counts.
+* **Data represented:** High-level profiling comparison across key dimensions.
+
+#### 💻 Code
 ```python
 # LOGIC: 
 # Compute overall metrics per dataset: 
@@ -988,11 +1006,11 @@ agg_fabric.show(truncate=False)
  
  
 
-Result: 
+Result:
 ```
 
+#### 📊 Result
 ```text
-### SUMMARY METRICS
 
 Prod Summary 
 +-----+----+-----+-----+--------+------+ 
@@ -1013,9 +1031,18 @@ Fabric Summary
  
  
 
-14. Row-level attribute mismatch summary 
+14. Row-level attribute mismatch summary
 ```
 
+---
+
+### 🔹 Cell 14
+
+#### 🎯 Logic & Purpose
+Reconcile payload columns for matching composite keys to identify attribute-level mismatches.
+* **Data represented:** Mismatch counts for OPER, TRANS, HIST_REC, MACHINE, USERNAME, COMMAND, and EMPID on matching keys.
+
+#### 💻 Code
 ```python
 # LOGIC: 
 # For rows matched on key (LOT, DATE_TIME, HISTORDER), 
@@ -1063,11 +1090,11 @@ mismatch_summary.show(truncate=False)
  
  
 
-Result: 
+Result:
 ```
 
+#### 📊 Result
 ```text
-### ATTRIBUTE MISMATCH ANALYSIS
 
 +-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+ 
 |OPER_MISMATCH|OPERDESC_MISMATCH|OPERLONGDESC_MISMATCH|TRANS_MISMATCH|HIST_REC_MISMATCH|MACHINE_MISMATCH|USERNAME_MISMATCH|COMMAND_MISMATCH|EMPID_MISMATCH| 
@@ -1080,9 +1107,18 @@ Result:
  
  
 
-15. TRANS mismatch details (sample) 
+15. TRANS mismatch details (sample)
 ```
 
+---
+
+### 🔹 Cell 15
+
+#### 🎯 Logic & Purpose
+Extract a granular row sample where transaction descriptions (`TRANS`) differ for identical keys.
+* **Data represented:** Side-by-side comparison of PROD_TRANS and FABRIC_TRANS values.
+
+#### 💻 Code
 ```python
 # LOGIC: 
 # For rows where TRANS differs between Prod and Fabric, 
@@ -1108,11 +1144,11 @@ compare.filter(
  
 
 Result (first 200 mismatches): 
-(very long; excerpt) 
+(very long; excerpt)
 ```
 
+#### 📊 Result
 ```text
-### TRANS MISMATCH SAMPLE
 
 +----------+---------+---------+----------+------------+ 
 |LOT       |DATE_TIME|HISTORDER|PROD_TRANS|FABRIC_TRANS| 
@@ -1132,9 +1168,18 @@ only showing top 200 rows
  
  
 
-16. COMMAND mismatch details (sample) 
+16. COMMAND mismatch details (sample)
 ```
 
+---
+
+### 🔹 Cell 16
+
+#### 🎯 Logic & Purpose
+Extract a granular row sample where system commands (`COMMAND`) differ for identical keys.
+* **Data represented:** Side-by-side comparison of PROD_COMMAND and FABRIC_COMMAND values.
+
+#### 💻 Code
 ```python
 # LOGIC: 
 # For rows where COMMAND differs between Prod and Fabric, 
@@ -1160,11 +1205,11 @@ compare.filter(
  
 
 Result (first 200 mismatches): 
-(very long; excerpt) 
+(very long; excerpt)
 ```
 
+#### 📊 Result
 ```text
-### COMMAND MISMATCH SAMPLE
 
 +----------+---------+---------+------------+--------------+ 
 |LOT       |DATE_TIME|HISTORDER|PROD_COMMAND|FABRIC_COMMAND| 
@@ -1182,9 +1227,18 @@ only showing top 200 rows
  
  
 
-17. HIST_REC mismatch details (sample) 
+17. HIST_REC mismatch details (sample)
 ```
 
+---
+
+### 🔹 Cell 17
+
+#### 🎯 Logic & Purpose
+Extract a granular row sample where history annotations (`HIST_REC`) differ for identical keys.
+* **Data represented:** Side-by-side comparison of PROD_HIST_REC and FABRIC_HIST_REC strings.
+
+#### 💻 Code
 ```python
 # LOGIC: 
 # For rows where HIST_REC text differs between Prod and Fabric, 
@@ -1210,11 +1264,11 @@ compare.filter(
  
 
 Result (first 200 mismatches): 
-(very long; excerpt) 
+(very long; excerpt)
 ```
 
+#### 📊 Result
 ```text
-### HIST_REC MISMATCH SAMPLE
 
 +----------+---------+---------+----------------------------------------+----------------------------------------+ 
 |LOT       |DATE_TIME|HISTORDER|PROD_HIST_REC                           |FABRIC_HIST_REC                         | 
@@ -1224,81 +1278,7 @@ Result (first 200 mismatches):
 ... 
 |7868A1H5  |19:51.1  |2        |Parameter: APC_M_YTran                  |Parameter: APC_M_Rot                    | 
 +----------+---------+---------+----------------------------------------+----------------------------------------+ 
-only showing top 200 rows 
-
- 
-
- 
-
- 
-
- 
+only showing top 200 rows
 ```
 
-
 ---
-
-## 📋 Comprehensive Observations & Data Validation Analysis
-
-Based on the verification results extracted above, we present the detailed data analysis and root cause findings:
-
-### 1. Data Volume & Exact Match Discrepancy
-* **Total Rows in Production (SQL View):** 10,023
-* **Total Rows in Fabric (Warehouse View):** 9,841
-* **Common Rows (Exact Match on all columns):** 9,673
-* **Discrepancy (Production Excess):** 182 rows (representing 1.82% of Production data)
-* **Reconciliation Rate:** **96.51%** exact row match.
-
-> [!CAUTION]
-> **Validation Failure:** 182 rows are present in Production but missing completely from Fabric. Fabric contains no extra records (0 rows unique to Fabric).
-
----
-
-### 2. Missing Lots and Suffix/Padding Issue
-* **Distinct LOT count in Prod:** 1,294
-* **Distinct LOT count in Fabric:** 1,265
-* **Delta:** 29 LOTs are completely missing in Fabric.
-* **The 29 Missing LOTs:**
-  `5245A001A`, `5630A001A`, `5630A003A`, `5704A326E`, `5801A009A`, `5822A061A`, `5941A0F5A`, `6098A0E1A`, `6121A001A`, `6226A081A`, `6352AC23D`, `6352AC45A`, `6554A0A0 `, `6554A0A1 `, `6794A001N`, `6794A007B`, `6951A016A`, `7192A1E4A`, `7417A001A`, `7499A054 `, `7499A055 `, `7579A1C3A`, `7610A2J5A`, `7693A006H`, `7693A006J`, `7851AD84A`, `7851AD89A`, `7974A005A`, `7974A005B`
-
-#### 🔍 Analysis:
-* **Trailing Spaces:** Trailing spaces in IDs (e.g. `6554A0A0 `, `7499A054 `) match leniently in SQL Server but fail to match strictly in Spark SQL.
-* **Suffixes:** Suffixes like `A`, `E`, `N`, `B`, `H`, `J` (e.g., `5704A326E`, `6794A001N`, `7693A006H`) are missing, which points to potential replication filters or data truncation constraints in the ETL sync script.
-
----
-
-### 3. Duplication Source Check
-* **Duplicates in Prod:** 168 rows
-* **Duplicates in Fabric:** 168 rows
-* **Analysis:** Both datasets contain exactly 168 duplicate rows (where the entire row is identical). This confirms that duplication is not introduced by the replication pipeline, but is inherited from the source database view.
-
----
-
-### 4. Shuffled Attributes (Non-Deterministic Joins)
-When performing a key-based join using `(LOT, DATE_TIME, HISTORDER)`, we observe massive mismatch rates on the row attributes:
-* **HIST_REC Mismatches:** 2,204 rows
-* **TRANS Mismatches:** 1,466 rows
-* **COMMAND Mismatches:** 318 rows
-* **USERNAME Mismatches:** 68 rows
-* **MACHINE Mismatches:** 40 rows
-* **OPER / OPERDESC / OPERLONGDESC Mismatches:** 10 rows
-
-#### 🔍 Why this happens (Join Key Instability):
-* The combination of `(LOT, DATE_TIME, HISTORDER)` is **not unique** (as demonstrated by the *DUPLICATE KEYS IN PROD* section, where some composite keys return a count of 5 for different events).
-* Because multiple transaction logs share the exact same timestamp and history order, there is no secondary ordering identifier (like a surrogate ID or physical sequence key) in the Fabric view joins.
-* Consequently, when Spark compiles the Fabric view, it pairs tables non-deterministically. This causes attributes (e.g., pairing `TRANS` with `HIST_REC`, or even `OPER` in 10 cases) to shuffle between the duplicate records.
-
----
-
-### 5. Machine NULL Discrepancy
-* **Prod Machine Nulls:** 3,899 NULLs
-* **Fabric Machine Nulls:** 3,859 NULLs
-* **Delta:** 40 rows
-* **Analysis:** This exactly aligns with the **40 MACHINE mismatches** from the attribute analysis. The non-deterministic join key alignment randomly paired rows with a NULL machine in Prod to rows with a populated machine in Fabric, leading to a minor count shift.
-
----
-
-### 🛠️ Strategic Recommendations
-1. **Enhance Join Conditions in Fabric View:** Update the view definitions in Fabric to join on a unique Transaction ID or sequence identifier (`TXN_ID` or a combination of `HISTORDER` and a sequence column) to ensure stable, deterministic attribute mapping.
-2. **Standardize String Treatment (Trimming):** Implement consistent trimming logic (`TRIM(LOT)`) across all views and replication stages in Fabric to prevent trailing spaces from breaking joins and dropping lots.
-3. **Verify Replication Filter Rules:** Confirm that the migration replication logic is not intentionally or accidentally excluding Lot IDs ending with suffix characters (like `A`, `E`, `N`, `B`, `H`, `J`).
