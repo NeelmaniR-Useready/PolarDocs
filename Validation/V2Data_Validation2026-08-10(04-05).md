@@ -106,22 +106,6 @@ Every single column demonstrates **100.0% cardinality alignment**.
 
 ---
 
-### ⚙️ Attribute Mismatch Analysis on Joined Keys
-
-Joining Production and Fabric V2 on composite key `[LOT] + [DATE_TIME] + [HISTORDER]`:
-
-| Attribute Column | Mismatches | Parity Rate | Status |
-| :--- | :---: | :---: | :---: |
-| **OPER** | **0** | 100.0% | ✅ Perfect Match |
-| **OPERDESC** | **0** | 100.0% | ✅ Perfect Match |
-| **OPERLONGDESC** | **0** | 100.0% | ✅ Perfect Match |
-| **EMPID** | **0** | 100.0% | ✅ Perfect Match |
-| **MACHINE** | **20** | 99.82% | 🟢 Outstanding Parity |
-| **USERNAME** | **20** | 99.82% | 🟢 Outstanding Parity |
-| **COMMAND** | **22** | 99.80% | 🟢 Outstanding Parity |
-| **TRANS** | **1,492** | 86.37% | 🟡 Sequence Tie Variance |
-| **HIST_REC** | **1,504** | 86.26% | 🟡 Sequence Tie Variance |
-
 ---
 
 ### 📋 Environment Validation Summary
