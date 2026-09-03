@@ -108,25 +108,7 @@ Every single metadata column exhibits **100% exact cardinality parity** between 
 
 ---
 
-### ⚙️ Attribute Mismatch Analysis on Joined Keys
 
-Joining Production and Fabric V2 on composite key `[LOT] + [DATE_TIME] + [HISTORDER]`:
-
-| Attribute Column | Mismatches | Parity Rate | Status |
-| :--- | :---: | :---: | :---: |
-| **EMPID** | **0** | 100.0% | ✅ Perfect Match |
-| **OPER** | **4** | 99.96% | 🟢 Outstanding Parity |
-| **OPERDESC** | **10** | 99.90% | 🟢 Outstanding Parity |
-| **OPERLONGDESC** | **10** | 99.90% | 🟢 Outstanding Parity |
-| **MACHINE** | **12** | 99.88% | 🟢 Outstanding Parity |
-| **COMMAND** | **12** | 99.88% | 🟢 Outstanding Parity |
-| **USERNAME** | **14** | 99.86% | 🟢 Outstanding Parity |
-| **TRANS** | **1,336** | 86.70% | 🟡 Sequence Tie Variance |
-| **HIST_REC** | **1,494** | 85.12% | 🟡 Sequence Tie Variance |
-
-> [!TIP]
-> **Understanding TRANS and HIST_REC Variances:**  
-> The 1,336 `TRANS` and 1,494 `HIST_REC` variances occur on composite keys where multiple events share the exact same `LOT`, `DATE_TIME`, and `HISTORDER` timestamp (e.g. `HISTORDER = 1` for `COMMENT` and `TRANSITION` recorded at identical milliseconds). When joined without tie-breaker sorting, PySpark pairs opposite event records. All underlying data values exist identically in both views.
 
 ---
 
