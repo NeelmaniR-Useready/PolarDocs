@@ -106,9 +106,6 @@ Every single column demonstrates **100.0% cardinality alignment**.
 
 ---
 
-
----
-
 ### 📋 Environment Validation Summary
 
 | Core Area | Status | Remarks |
@@ -119,13 +116,15 @@ Every single column demonstrates **100.0% cardinality alignment**.
 | **Column Schema Parity** | ✅ Perfect | 18 out of 18 columns exhibit 100.0% distinct value parity. |
 | **Duplicate Row Count** | ✅ Perfect | Exactly 4 duplicate rows in both environments. |
 
+---
 
 ---
 
-## 📜 Executed PySpark Code & Raw Console Output
+## 📜 Step-by-Step PySpark Validation Queries & Results
 
-### 1. Executed PySpark Code
+### Step 1: Data Ingestion & Total Row Count Comparison
 
+#### 💻 PySpark Execution Code:
 ```python
 %%pyspark
 from pyspark.sql import functions as F
@@ -155,7 +154,23 @@ fabric_count = df_Fabric.count()
 
 print(f"Prod Rows   : {prod_count}")
 print(f"Fabric Rows : {fabric_count}")
+```
 
+#### 📊 Execution Result Output:
+```text
+================================================================================
+ROW COUNTS
+================================================================================
+Prod Rows   : 9910
+Fabric Rows : 9910
+```
+
+---
+
+### Step 2: Schema Column Distinct Count Profiling
+
+#### 💻 PySpark Execution Code:
+```python
 # ============================================================
 # DISTINCT COUNT PROFILE
 # ============================================================
@@ -181,7 +196,40 @@ df_Fabric.select(
         for c in df_Fabric.columns
     ]
 ).show(vertical=True, truncate=False)
+```
 
+#### 📊 Execution Result Output:
+```text
+================================================================================
+PROD DISTINCT COUNTS
+================================================================================
+-RECORD 0------------
+ LOT          | 1291 
+ DATE_TIME    | 3325 
+ HISTORDER    | 198  
+ TRANS        | 51   
+ OPER         | 450  
+ MASK_LVL     | 68   
+ OPERDESC     | 151  
+ OPERLONGDESC | 541  
+ MACHINE      | 191  
+ USERNAME     | 268  
+ HIST_REC     | 1762 
+ HISTCODE     | 51   
+ COMMAND      | 25   
+ SHORTREPORT  | 2    
+ VIEWFLAG     | 2    
+ Is_Person    | 2    
+ IS_DUPLICATE | 2    
+ EMPID        | 85
+```
+
+---
+
+### Step 3: Full Set Row Intersect & Direct Match Percentage
+
+#### 💻 PySpark Execution Code:
+```python
 # ============================================================
 # ROW COMPARISON
 # ============================================================
@@ -213,7 +261,29 @@ print("=" * 80)
 match_pct = round(common_rows * 100 / prod_count, 2)
 
 print(f"Prod Match % : {match_pct}")
+```
 
+#### 📊 Execution Result Output:
+```text
+================================================================================
+FULL ROW COMPARISON
+================================================================================
+Common rows         : 9906
+Only in Prod        : 0
+Only in Fabric      : 0
+
+================================================================================
+MATCH PERCENTAGE
+================================================================================
+Prod Match % : 99.96
+```
+
+---
+
+### Step 4: Duplicate Record & Duplicate Key Analysis
+
+#### 💻 PySpark Execution Code:
+```python
 # ============================================================
 # DUPLICATE ROWS
 # ============================================================
@@ -244,7 +314,84 @@ df_Prod.groupBy(*key_cols) \
     .orderBy(F.desc("count")) \
     .limit(50) \
     .show(50, False)
+```
 
+#### 📊 Execution Result Output:
+```text
+================================================================================
+DUPLICATE ROW ANALYSIS
+================================================================================
+Prod duplicates   : 4
+Fabric duplicates : 4
+
+================================================================================
+DUPLICATE KEYS IN PROD
+================================================================================
++----------+-----------------------+---------+-----+
+|LOT       |DATE_TIME              |HISTORDER|count|
++----------+-----------------------+---------+-----+
+|6053A0G3  |2026-08-10 10:22:17.513|1        |3    |
+|7487A3A7  |2026-08-10 10:37:51.197|1        |3    |
+|6226A078  |2026-08-10 10:46:26.1  |1        |3    |
+|7851AD62  |2026-08-10 10:37:50.18 |1        |3    |
+|6734A012  |2026-08-10 10:28:07.15 |1        |2    |
+|6514A4K1  |2026-08-10 10:39:25.753|1        |2    |
+|7499A035  |2026-08-10 10:17:18.2  |1        |2    |
+|7863A019  |2026-08-10 10:59:51.193|1        |2    |
+|7328TB9799|2026-08-10 10:23:45.2  |2        |2    |
+|6352ACD5  |2026-08-10 10:29:37.763|1        |2    |
+|6514A3Q8  |2026-08-10 10:38:27.697|1        |2    |
+|5941A0R4  |2026-08-10 10:44:34.72 |1        |2    |
+|5047A055  |2026-08-10 10:49:03.8  |1        |2    |
+|6352ACB1  |2026-08-10 10:55:24.717|1        |2    |
+|7990A014  |2026-08-10 10:45:43.71 |1        |2    |
+|6621A5J9B |2026-08-10 10:21:47.52 |1        |2    |
+|7192A1G6  |2026-08-10 10:22:20.427|1        |2    |
+|7610A2C8  |2026-08-10 10:22:53.08 |1        |2    |
+|6786A1C4  |2026-08-10 10:56:43.53 |1        |2    |
+|6515A0U6  |2026-08-10 10:25:26.94 |1        |2    |
+|5502A1J5  |2026-08-10 10:34:12.9  |1        |2    |
+|7851ADB0  |2026-08-10 10:44:50.213|1        |2    |
+|5539A1N7  |2026-08-10 10:27:08.59 |1        |2    |
+|7131A050  |2026-08-10 10:31:48.357|1        |2    |
+|6389A057  |2026-08-10 10:32:57.54 |1        |2    |
+|5620AFY6  |2026-08-10 10:51:17.757|1        |2    |
+|6780A064  |2026-08-10 10:33:10.5  |1        |2    |
+|5502A1K7  |2026-08-10 10:34:13.023|1        |2    |
+|4796AP78  |2026-08-10 10:55:10.063|1        |2    |
+|6514A3E5  |2026-08-10 10:21:04.73 |1        |2    |
+|5200A3B9  |2026-08-10 10:25:14.94 |1        |2    |
+|6780A077  |2026-08-10 10:32:58.03 |1        |2    |
+|6098A0F6  |2026-08-10 10:37:38.27 |1        |2    |
+|6339A2Q2  |2026-08-10 10:21:52.28 |1        |2    |
+|5776A001  |2026-08-10 10:32:41.977|1        |2    |
+|6514A3Y2  |2026-08-10 10:39:10.72 |1        |2    |
+|5400TZZH8 |2026-08-10 10:46:18.173|1        |2    |
+|5502A1J4  |2026-08-10 10:32:37.673|1        |2    |
+|6352ACD3  |2026-08-10 10:51:52.197|1        |2    |
+|7584A022  |2026-08-10 10:46:19.237|1        |2    |
+|6514A384  |2026-08-10 10:17:57.11 |1        |2    |
+|7610A2B7  |2026-08-10 10:50:23.983|1        |2    |
+|6514A3R7  |2026-08-10 10:55:30.11 |1        |2    |
+|7868A1J9  |2026-08-10 10:22:40.8  |1        |2    |
+|5773A1C6  |2026-08-10 10:47:08.303|1        |2    |
+|7610A2H4  |2026-08-10 10:18:50.73 |1        |2    |
+|6514A3G8  |2026-08-10 10:28:25.633|1        |2    |
+|5620AFY0  |2026-08-10 10:34:13.4  |1        |2    |
+|6514A4K1  |2026-08-10 10:39:27.97 |1        |2    |
+|7584A003  |2026-08-10 10:42:10.54 |1        |2    |
++----------+-----------------------+---------+-----+
+
+
+====================================================================
+```
+
+---
+
+### Step 5: Column Null Value Profile Analysis
+
+#### 💻 PySpark Execution Code:
+```python
 # ============================================================
 # NULL ANALYSIS
 # ============================================================
@@ -257,16 +404,67 @@ df_Prod.select([
     F.sum(F.col(c).isNull().cast("int")).alias(c)
     for c in df_Prod.columns
 ]).show(vertical=True)
+```
 
-print("\n" + "=" * 80)
-print("FABRIC NULL PROFILE")
-print("=" * 80)
+#### 📊 Execution Result Output:
+```text
+================================================================================
+PROD NULL PROFILE
+================================================================================
+-RECORD 0------------
+ LOT          | 0    
+ DATE_TIME    | 0    
+ HISTORDER    | 0    
+ TRANS        | 0    
+ OPER         | 0    
+ MASK_LVL     | 0    
+ OPERDESC     | 0    
+ OPERLONGDESC | 0    
+ MACHINE      | 3892 
+ USERNAME     | 0    
+ HIST_REC     | 0    
+ HISTCODE     | 0    
+ COMMAND      | 0    
+ SHORTREPORT  | 0    
+ VIEWFLAG     | 0    
+ Is_Person    | 0    
+ IS_DUPLICATE | 0    
+ EMPID        | 0    
 
-df_Fabric.select([
-    F.sum(F.col(c).isNull().cast("int")).alias(c)
-    for c in df_Fabric.columns
-]).show(vertical=True)
 
+================================================================================
+FABRIC NULL PROFILE
+================================================================================
+-RECORD 0------------
+ LOT          | 0    
+ DATE_TIME    | 0    
+ HISTORDER    | 0    
+ TRANS        | 0    
+ OPER         | 0    
+ MASK_LVL     | 0    
+ OPERDESC     | 0    
+ OPERLONGDESC | 0    
+ MACHINE      | 3892 
+ USERNAME     | 0    
+ HIST_REC     | 0    
+ HISTCODE     | 0    
+ COMMAND      | 0    
+ SHORTREPORT  | 0    
+ VIEWFLAG     | 0    
+ Is_Person    | 0    
+ IS_DUPLICATE | 0    
+ EMPID        | 0    
+
+
+====================================================================
+```
+
+---
+
+### Step 6: Timestamp Window & Date Range Verification
+
+#### 💻 PySpark Execution Code:
+```python
 # ============================================================
 # DATE RANGE CHECK
 # ============================================================
@@ -280,13 +478,37 @@ df_Prod.select(
     F.min("DATE_TIME").alias("MIN_DATE_TIME"),
     F.max("DATE_TIME").alias("MAX_DATE_TIME")
 ).show(truncate=False)
+```
 
-print("Fabric")
-df_Fabric.select(
-    F.min("DATE_TIME").alias("MIN_DATE_TIME"),
-    F.max("DATE_TIME").alias("MAX_DATE_TIME")
-).show(truncate=False)
+#### 📊 Execution Result Output:
+```text
+================================================================================
+DATE RANGE COMPARISON
+================================================================================
+Prod
++-----------------------+----------------------+
+|MIN_DATE_TIME          |MAX_DATE_TIME         |
++-----------------------+----------------------+
+|2026-08-10 10:16:00.237|2026-08-10 10:59:59.39|
++-----------------------+----------------------+
 
+Fabric
++-----------------------+----------------------+
+|MIN_DATE_TIME          |MAX_DATE_TIME         |
++-----------------------+----------------------+
+|2026-08-10 10:16:00.237|2026-08-10 10:59:59.39|
++-----------------------+----------------------+
+
+
+====================================================================
+```
+
+---
+
+### Step 7: Entity Discrepancy & Missing Lots Analysis
+
+#### 💻 PySpark Execution Code:
+```python
 # ============================================================
 # LOTS ONLY IN PROD
 # ============================================================
@@ -300,21 +522,37 @@ only_prod.select("LOT") \
     .orderBy("LOT") \
     .limit(50) \
     .show(50, False)
+```
 
-# ============================================================
-# LOTS ONLY IN FABRIC
-# ============================================================
+#### 📊 Execution Result Output:
+```text
+================================================================================
+LOTS ONLY IN PROD
+================================================================================
++---+
+|LOT|
++---+
++---+
 
-print("\n" + "=" * 80)
-print("LOTS ONLY IN FABRIC")
-print("=" * 80)
 
-only_fabric.select("LOT") \
-    .distinct() \
-    .orderBy("LOT") \
-    .limit(50) \
-    .show(50, False)
+================================================================================
+LOTS ONLY IN FABRIC
+================================================================================
++---+
+|LOT|
++---+
++---+
 
+
+====================================================================
+```
+
+---
+
+### Step 8: Natural Composite Key Intersection ([LOT] + [DATE_TIME] + [HISTORDER])
+
+#### 💻 PySpark Execution Code:
+```python
 # ============================================================
 # KEY COMPARISON
 # ============================================================
@@ -358,17 +596,44 @@ prod_missing.select("LOT") \
     .orderBy("LOT") \
     .limit(50) \
     .show(50, False)
+```
 
-print("\n" + "=" * 80)
-print("DISTINCT LOTS MISSING IN PROD")
-print("=" * 80)
+#### 📊 Execution Result Output:
+```text
+================================================================================
+KEY COMPARISON (LOT, DATE_TIME, HISTORDER)
+================================================================================
+Common Keys      : 11126
+Prod Missing     : 0
+Fabric Missing   : 0
 
-fabric_missing.select("LOT") \
-    .distinct() \
-    .orderBy("LOT") \
-    .limit(50) \
-    .show(50, False)
+================================================================================
+DISTINCT LOTS MISSING IN FABRIC
+================================================================================
++---+
+|LOT|
++---+
++---+
 
+
+================================================================================
+DISTINCT LOTS MISSING IN PROD
+================================================================================
++---+
+|LOT|
++---+
++---+
+
+
+====================================================================
+```
+
+---
+
+### Step 9: Event & Entity Distribution Analysis (HISTCODE, OPER, EMPID, MACHINE)
+
+#### 💻 PySpark Execution Code:
+```python
 # ============================================================
 # HISTCODE DISTRIBUTION
 # ============================================================
@@ -483,381 +748,10 @@ machine_compare = (
 machine_compare.orderBy("MACHINE") \
     .limit(50) \
     .show(50, False)
-
-# ============================================================
-# SUMMARY METRICS
-# ============================================================
-
-print("\n" + "=" * 80)
-print("SUMMARY METRICS")
-print("=" * 80)
-
-agg_prod = df_Prod.select(
-    F.count("*").alias("rows"),
-    F.countDistinct("LOT").alias("lots"),
-    F.countDistinct("OPER").alias("opers"),
-    F.countDistinct("USERNAME").alias("users"),
-    F.countDistinct("MACHINE").alias("machines"),
-    F.countDistinct("EMPID").alias("empids")
-)
-
-agg_fabric = df_Fabric.select(
-    F.count("*").alias("rows"),
-    F.countDistinct("LOT").alias("lots"),
-    F.countDistinct("OPER").alias("opers"),
-    F.countDistinct("USERNAME").alias("users"),
-    F.countDistinct("MACHINE").alias("machines"),
-    F.countDistinct("EMPID").alias("empids")
-)
-
-print("Prod Summary")
-agg_prod.show(truncate=False)
-
-print("Fabric Summary")
-agg_fabric.show(truncate=False)
-
-# ============================================================
-# ROW LEVEL ATTRIBUTE COMPARISON
-# ============================================================
-
-print("\n" + "=" * 80)
-print("ATTRIBUTE MISMATCH ANALYSIS")
-print("=" * 80)
-
-cols_to_compare = [
-    "OPER",
-    "OPERDESC",
-    "OPERLONGDESC",
-    "TRANS",
-    "HIST_REC",
-    "MACHINE",
-    "USERNAME",
-    "COMMAND",
-    "EMPID"
-]
-
-compare = (
-    df_Prod.alias("p")
-    .join(
-        df_Fabric.alias("f"),
-        key_cols
-    )
-)
-
-mismatch_summary = compare.agg(*[
-    F.sum(
-        F.when(
-            F.coalesce(F.col(f"p.{c}"), F.lit("")) !=
-            F.coalesce(F.col(f"f.{c}"), F.lit("")),
-            1
-        ).otherwise(0)
-    ).alias(f"{c}_MISMATCH")
-    for c in cols_to_compare
-])
-
-mismatch_summary.show(truncate=False)
-
-# ============================================================
-# TRANS MISMATCH DETAILS
-# ============================================================
-
-print("\n" + "=" * 80)
-print("TRANS MISMATCH SAMPLE")
-print("=" * 80)
-
-compare.filter(
-    F.coalesce(F.col("p.TRANS"), F.lit("")) !=
-    F.coalesce(F.col("f.TRANS"), F.lit(""))
-).select(
-    "LOT",
-    "DATE_TIME",
-    "HISTORDER",
-    F.col("p.TRANS").alias("PROD_TRANS"),
-    F.col("f.TRANS").alias("FABRIC_TRANS")
-).limit(50).show(50, False)
-
-# ============================================================
-# COMMAND MISMATCH DETAILS
-# ============================================================
-
-print("\n" + "=" * 80)
-print("COMMAND MISMATCH SAMPLE")
-print("=" * 80)
-
-compare.filter(
-    F.coalesce(F.col("p.COMMAND"), F.lit("")) !=
-    F.coalesce(F.col("f.COMMAND"), F.lit(""))
-).select(
-    "LOT",
-    "DATE_TIME",
-    "HISTORDER",
-    F.col("p.COMMAND").alias("PROD_COMMAND"),
-    F.col("f.COMMAND").alias("FABRIC_COMMAND")
-).limit(50).show(50, False)
-
-# ============================================================
-# HIST_REC MISMATCH DETAILS
-# ============================================================
-
-print("\n" + "=" * 80)
-print("HIST_REC MISMATCH SAMPLE")
-print("=" * 80)
-
-compare.filter(
-    F.coalesce(F.col("p.HIST_REC"), F.lit("")) !=
-    F.coalesce(F.col("f.HIST_REC"), F.lit(""))
-).select(
-    "LOT",
-    "DATE_TIME",
-    "HISTORDER",
-    F.col("p.HIST_REC").alias("PROD_HIST_REC"),
-    F.col("f.HIST_REC").alias("FABRIC_HIST_REC")
-).limit(50).show(50, False)
 ```
 
-### 2. Raw PySpark Execution Console Output
-
+#### 📊 Execution Result Output:
 ```text
-================================================================================
-ROW COUNTS
-================================================================================
-Prod Rows   : 9910
-Fabric Rows : 9910
-
-================================================================================
-PROD DISTINCT COUNTS
-================================================================================
--RECORD 0------------
- LOT          | 1291 
- DATE_TIME    | 3325 
- HISTORDER    | 198  
- TRANS        | 51   
- OPER         | 450  
- MASK_LVL     | 68   
- OPERDESC     | 151  
- OPERLONGDESC | 541  
- MACHINE      | 191  
- USERNAME     | 268  
- HIST_REC     | 1762 
- HISTCODE     | 51   
- COMMAND      | 25   
- SHORTREPORT  | 2    
- VIEWFLAG     | 2    
- Is_Person    | 2    
- IS_DUPLICATE | 2    
- EMPID        | 85   
-
-
-================================================================================
-FABRIC DISTINCT COUNTS
-================================================================================
--RECORD 0------------
- LOT          | 1291 
- DATE_TIME    | 3325 
- HISTORDER    | 198  
- TRANS        | 51   
- OPER         | 450  
- MASK_LVL     | 68   
- OPERDESC     | 151  
- OPERLONGDESC | 541  
- MACHINE      | 191  
- USERNAME     | 268  
- HIST_REC     | 1762 
- HISTCODE     | 51   
- COMMAND      | 25   
- SHORTREPORT  | 2    
- VIEWFLAG     | 2    
- Is_Person    | 2    
- IS_DUPLICATE | 2    
- EMPID        | 85   
-
-
-================================================================================
-FULL ROW COMPARISON
-================================================================================
-Common rows         : 9906
-Only in Prod        : 0
-Only in Fabric      : 0
-
-================================================================================
-MATCH PERCENTAGE
-================================================================================
-Prod Match % : 99.96
-
-================================================================================
-DUPLICATE ROW ANALYSIS
-================================================================================
-Prod duplicates   : 4
-Fabric duplicates : 4
-
-================================================================================
-DUPLICATE KEYS IN PROD
-================================================================================
-+----------+-----------------------+---------+-----+
-|LOT       |DATE_TIME              |HISTORDER|count|
-+----------+-----------------------+---------+-----+
-|6053A0G3  |2026-08-10 10:22:17.513|1        |3    |
-|7487A3A7  |2026-08-10 10:37:51.197|1        |3    |
-|6226A078  |2026-08-10 10:46:26.1  |1        |3    |
-|7851AD62  |2026-08-10 10:37:50.18 |1        |3    |
-|6734A012  |2026-08-10 10:28:07.15 |1        |2    |
-|6514A4K1  |2026-08-10 10:39:25.753|1        |2    |
-|7499A035  |2026-08-10 10:17:18.2  |1        |2    |
-|7863A019  |2026-08-10 10:59:51.193|1        |2    |
-|7328TB9799|2026-08-10 10:23:45.2  |2        |2    |
-|6352ACD5  |2026-08-10 10:29:37.763|1        |2    |
-|6514A3Q8  |2026-08-10 10:38:27.697|1        |2    |
-|5941A0R4  |2026-08-10 10:44:34.72 |1        |2    |
-|5047A055  |2026-08-10 10:49:03.8  |1        |2    |
-|6352ACB1  |2026-08-10 10:55:24.717|1        |2    |
-|7990A014  |2026-08-10 10:45:43.71 |1        |2    |
-|6621A5J9B |2026-08-10 10:21:47.52 |1        |2    |
-|7192A1G6  |2026-08-10 10:22:20.427|1        |2    |
-|7610A2C8  |2026-08-10 10:22:53.08 |1        |2    |
-|6786A1C4  |2026-08-10 10:56:43.53 |1        |2    |
-|6515A0U6  |2026-08-10 10:25:26.94 |1        |2    |
-|5502A1J5  |2026-08-10 10:34:12.9  |1        |2    |
-|7851ADB0  |2026-08-10 10:44:50.213|1        |2    |
-|5539A1N7  |2026-08-10 10:27:08.59 |1        |2    |
-|7131A050  |2026-08-10 10:31:48.357|1        |2    |
-|6389A057  |2026-08-10 10:32:57.54 |1        |2    |
-|5620AFY6  |2026-08-10 10:51:17.757|1        |2    |
-|6780A064  |2026-08-10 10:33:10.5  |1        |2    |
-|5502A1K7  |2026-08-10 10:34:13.023|1        |2    |
-|4796AP78  |2026-08-10 10:55:10.063|1        |2    |
-|6514A3E5  |2026-08-10 10:21:04.73 |1        |2    |
-|5200A3B9  |2026-08-10 10:25:14.94 |1        |2    |
-|6780A077  |2026-08-10 10:32:58.03 |1        |2    |
-|6098A0F6  |2026-08-10 10:37:38.27 |1        |2    |
-|6339A2Q2  |2026-08-10 10:21:52.28 |1        |2    |
-|5776A001  |2026-08-10 10:32:41.977|1        |2    |
-|6514A3Y2  |2026-08-10 10:39:10.72 |1        |2    |
-|5400TZZH8 |2026-08-10 10:46:18.173|1        |2    |
-|5502A1J4  |2026-08-10 10:32:37.673|1        |2    |
-|6352ACD3  |2026-08-10 10:51:52.197|1        |2    |
-|7584A022  |2026-08-10 10:46:19.237|1        |2    |
-|6514A384  |2026-08-10 10:17:57.11 |1        |2    |
-|7610A2B7  |2026-08-10 10:50:23.983|1        |2    |
-|6514A3R7  |2026-08-10 10:55:30.11 |1        |2    |
-|7868A1J9  |2026-08-10 10:22:40.8  |1        |2    |
-|5773A1C6  |2026-08-10 10:47:08.303|1        |2    |
-|7610A2H4  |2026-08-10 10:18:50.73 |1        |2    |
-|6514A3G8  |2026-08-10 10:28:25.633|1        |2    |
-|5620AFY0  |2026-08-10 10:34:13.4  |1        |2    |
-|6514A4K1  |2026-08-10 10:39:27.97 |1        |2    |
-|7584A003  |2026-08-10 10:42:10.54 |1        |2    |
-+----------+-----------------------+---------+-----+
-
-
-================================================================================
-PROD NULL PROFILE
-================================================================================
--RECORD 0------------
- LOT          | 0    
- DATE_TIME    | 0    
- HISTORDER    | 0    
- TRANS        | 0    
- OPER         | 0    
- MASK_LVL     | 0    
- OPERDESC     | 0    
- OPERLONGDESC | 0    
- MACHINE      | 3892 
- USERNAME     | 0    
- HIST_REC     | 0    
- HISTCODE     | 0    
- COMMAND      | 0    
- SHORTREPORT  | 0    
- VIEWFLAG     | 0    
- Is_Person    | 0    
- IS_DUPLICATE | 0    
- EMPID        | 0    
-
-
-================================================================================
-FABRIC NULL PROFILE
-================================================================================
--RECORD 0------------
- LOT          | 0    
- DATE_TIME    | 0    
- HISTORDER    | 0    
- TRANS        | 0    
- OPER         | 0    
- MASK_LVL     | 0    
- OPERDESC     | 0    
- OPERLONGDESC | 0    
- MACHINE      | 3892 
- USERNAME     | 0    
- HIST_REC     | 0    
- HISTCODE     | 0    
- COMMAND      | 0    
- SHORTREPORT  | 0    
- VIEWFLAG     | 0    
- Is_Person    | 0    
- IS_DUPLICATE | 0    
- EMPID        | 0    
-
-
-================================================================================
-DATE RANGE COMPARISON
-================================================================================
-Prod
-+-----------------------+----------------------+
-|MIN_DATE_TIME          |MAX_DATE_TIME         |
-+-----------------------+----------------------+
-|2026-08-10 10:16:00.237|2026-08-10 10:59:59.39|
-+-----------------------+----------------------+
-
-Fabric
-+-----------------------+----------------------+
-|MIN_DATE_TIME          |MAX_DATE_TIME         |
-+-----------------------+----------------------+
-|2026-08-10 10:16:00.237|2026-08-10 10:59:59.39|
-+-----------------------+----------------------+
-
-
-================================================================================
-LOTS ONLY IN PROD
-================================================================================
-+---+
-|LOT|
-+---+
-+---+
-
-
-================================================================================
-LOTS ONLY IN FABRIC
-================================================================================
-+---+
-|LOT|
-+---+
-+---+
-
-
-================================================================================
-KEY COMPARISON (LOT, DATE_TIME, HISTORDER)
-================================================================================
-Common Keys      : 11126
-Prod Missing     : 0
-Fabric Missing   : 0
-
-================================================================================
-DISTINCT LOTS MISSING IN FABRIC
-================================================================================
-+---+
-|LOT|
-+---+
-+---+
-
-
-================================================================================
-DISTINCT LOTS MISSING IN PROD
-================================================================================
-+---+
-|LOT|
-+---+
-+---+
-
-
 ================================================================================
 HISTCODE COMPARISON
 ================================================================================
@@ -1094,6 +988,50 @@ MACHINE DISTRIBUTION
 +------------+----------+------------+
 
 
+====================================================================
+```
+
+---
+
+### Step 10: Executive Summary Aggregates
+
+#### 💻 PySpark Execution Code:
+```python
+# ============================================================
+# SUMMARY METRICS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("SUMMARY METRICS")
+print("=" * 80)
+
+agg_prod = df_Prod.select(
+    F.count("*").alias("rows"),
+    F.countDistinct("LOT").alias("lots"),
+    F.countDistinct("OPER").alias("opers"),
+    F.countDistinct("USERNAME").alias("users"),
+    F.countDistinct("MACHINE").alias("machines"),
+    F.countDistinct("EMPID").alias("empids")
+)
+
+agg_fabric = df_Fabric.select(
+    F.count("*").alias("rows"),
+    F.countDistinct("LOT").alias("lots"),
+    F.countDistinct("OPER").alias("opers"),
+    F.countDistinct("USERNAME").alias("users"),
+    F.countDistinct("MACHINE").alias("machines"),
+    F.countDistinct("EMPID").alias("empids")
+)
+
+print("Prod Summary")
+agg_prod.show(truncate=False)
+
+print("Fabric Summary")
+agg_fabric.show(truncate=False)
+```
+
+#### 📊 Execution Result Output:
+```text
 ================================================================================
 SUMMARY METRICS
 ================================================================================
@@ -1112,6 +1050,116 @@ Fabric Summary
 +----+----+-----+-----+--------+------+
 
 
+====================================================================
+```
+
+---
+
+### Step 11: Inner-Join Attribute Mismatch Deep-Dive & Sample Inspections
+
+#### 💻 PySpark Execution Code:
+```python
+# ============================================================
+# ROW LEVEL ATTRIBUTE COMPARISON
+# ============================================================
+
+print("\n" + "=" * 80)
+print("ATTRIBUTE MISMATCH ANALYSIS")
+print("=" * 80)
+
+cols_to_compare = [
+    "OPER",
+    "OPERDESC",
+    "OPERLONGDESC",
+    "TRANS",
+    "HIST_REC",
+    "MACHINE",
+    "USERNAME",
+    "COMMAND",
+    "EMPID"
+]
+
+compare = (
+    df_Prod.alias("p")
+    .join(
+        df_Fabric.alias("f"),
+        key_cols
+    )
+)
+
+mismatch_summary = compare.agg(*[
+    F.sum(
+        F.when(
+            F.coalesce(F.col(f"p.{c}"), F.lit("")) !=
+            F.coalesce(F.col(f"f.{c}"), F.lit("")),
+            1
+        ).otherwise(0)
+    ).alias(f"{c}_MISMATCH")
+    for c in cols_to_compare
+])
+
+mismatch_summary.show(truncate=False)
+
+# ============================================================
+# TRANS MISMATCH DETAILS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("TRANS MISMATCH SAMPLE")
+print("=" * 80)
+
+compare.filter(
+    F.coalesce(F.col("p.TRANS"), F.lit("")) !=
+    F.coalesce(F.col("f.TRANS"), F.lit(""))
+).select(
+    "LOT",
+    "DATE_TIME",
+    "HISTORDER",
+    F.col("p.TRANS").alias("PROD_TRANS"),
+    F.col("f.TRANS").alias("FABRIC_TRANS")
+).limit(50).show(50, False)
+
+# ============================================================
+# COMMAND MISMATCH DETAILS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("COMMAND MISMATCH SAMPLE")
+print("=" * 80)
+
+compare.filter(
+    F.coalesce(F.col("p.COMMAND"), F.lit("")) !=
+    F.coalesce(F.col("f.COMMAND"), F.lit(""))
+).select(
+    "LOT",
+    "DATE_TIME",
+    "HISTORDER",
+    F.col("p.COMMAND").alias("PROD_COMMAND"),
+    F.col("f.COMMAND").alias("FABRIC_COMMAND")
+).limit(50).show(50, False)
+
+# ============================================================
+# HIST_REC MISMATCH DETAILS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("HIST_REC MISMATCH SAMPLE")
+print("=" * 80)
+
+compare.filter(
+    F.coalesce(F.col("p.HIST_REC"), F.lit("")) !=
+    F.coalesce(F.col("f.HIST_REC"), F.lit(""))
+).select(
+    "LOT",
+    "DATE_TIME",
+    "HISTORDER",
+    F.col("p.HIST_REC").alias("PROD_HIST_REC"),
+    F.col("f.HIST_REC").alias("FABRIC_HIST_REC")
+).limit(50).show(50, False)
+```
+
+#### 📊 Execution Result Output:
+```text
 ================================================================================
 ATTRIBUTE MISMATCH ANALYSIS
 ================================================================================
