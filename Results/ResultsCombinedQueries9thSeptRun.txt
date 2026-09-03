@@ -192,3 +192,4533 @@ Fabric
 Production
 -- 8912888
 100 percent match
+
+
+
+In depth analysis of the 4 timestamps
+
+I will paste the code for 1 timestamp and its result followed by other timestamps
+
+%%pyspark
+from pyspark.sql import functions as F
+
+# ============================================================
+# LOAD DATA
+# ============================================================
+
+df_Prod = spark.read.csv(
+    "abfss://9dd39a9d-2357-46a3-913d-1ff996531e62@onelake.dfs.fabric.microsoft.com/26a167a1-535e-4366-95da-c08c7730c83b/Files/v2(2026-05-03)Prod.csv",
+    header=True,
+    inferSchema=True
+)
+
+df_Fabric = spark.read.csv(
+    "abfss://9dd39a9d-2357-46a3-913d-1ff996531e62@onelake.dfs.fabric.microsoft.com/26a167a1-535e-4366-95da-c08c7730c83b/Files/v2(2026-05-03)Fabric.csv",
+    header=True,
+    inferSchema=True
+)
+
+print("=" * 80)
+print("ROW COUNTS")
+print("=" * 80)
+
+prod_count = df_Prod.count()
+fabric_count = df_Fabric.count()
+
+print(f"Prod Rows   : {prod_count}")
+print(f"Fabric Rows : {fabric_count}")
+
+# ============================================================
+# DISTINCT COUNT PROFILE
+# ============================================================
+
+print("\n" + "=" * 80)
+print("PROD DISTINCT COUNTS")
+print("=" * 80)
+
+df_Prod.select(
+    *[
+        F.countDistinct(c).alias(c)
+        for c in df_Prod.columns
+    ]
+).show(vertical=True, truncate=False)
+
+print("\n" + "=" * 80)
+print("FABRIC DISTINCT COUNTS")
+print("=" * 80)
+
+df_Fabric.select(
+    *[
+        F.countDistinct(c).alias(c)
+        for c in df_Fabric.columns
+    ]
+).show(vertical=True, truncate=False)
+
+# ============================================================
+# ROW COMPARISON
+# ============================================================
+
+print("\n" + "=" * 80)
+print("FULL ROW COMPARISON")
+print("=" * 80)
+
+common_rows = df_Prod.intersect(df_Fabric).count()
+
+only_prod = df_Prod.exceptAll(df_Fabric)
+only_fabric = df_Fabric.exceptAll(df_Prod)
+
+only_prod_count = only_prod.count()
+only_fabric_count = only_fabric.count()
+
+print("Common rows         :", common_rows)
+print("Only in Prod        :", only_prod_count)
+print("Only in Fabric      :", only_fabric_count)
+
+# ============================================================
+# MATCH %
+# ============================================================
+
+print("\n" + "=" * 80)
+print("MATCH PERCENTAGE")
+print("=" * 80)
+
+match_pct = round(common_rows * 100 / prod_count, 2)
+
+print(f"Prod Match % : {match_pct}")
+
+# ============================================================
+# DUPLICATE ROWS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("DUPLICATE ROW ANALYSIS")
+print("=" * 80)
+
+prod_duplicates = prod_count - df_Prod.distinct().count()
+fabric_duplicates = fabric_count - df_Fabric.distinct().count()
+
+print("Prod duplicates   :", prod_duplicates)
+print("Fabric duplicates :", fabric_duplicates)
+
+# ============================================================
+# DUPLICATED KEYS
+# ============================================================
+
+key_cols = ["LOT", "DATE_TIME", "HISTORDER"]
+
+print("\n" + "=" * 80)
+print("DUPLICATE KEYS IN PROD")
+print("=" * 80)
+
+df_Prod.groupBy(*key_cols) \
+    .count() \
+    .filter("count > 1") \
+    .orderBy(F.desc("count")) \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# NULL ANALYSIS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("PROD NULL PROFILE")
+print("=" * 80)
+
+df_Prod.select([
+    F.sum(F.col(c).isNull().cast("int")).alias(c)
+    for c in df_Prod.columns
+]).show(vertical=True)
+
+print("\n" + "=" * 80)
+print("FABRIC NULL PROFILE")
+print("=" * 80)
+
+df_Fabric.select([
+    F.sum(F.col(c).isNull().cast("int")).alias(c)
+    for c in df_Fabric.columns
+]).show(vertical=True)
+
+# ============================================================
+# DATE RANGE CHECK
+# ============================================================
+
+print("\n" + "=" * 80)
+print("DATE RANGE COMPARISON")
+print("=" * 80)
+
+print("Prod")
+df_Prod.select(
+    F.min("DATE_TIME").alias("MIN_DATE_TIME"),
+    F.max("DATE_TIME").alias("MAX_DATE_TIME")
+).show(truncate=False)
+
+print("Fabric")
+df_Fabric.select(
+    F.min("DATE_TIME").alias("MIN_DATE_TIME"),
+    F.max("DATE_TIME").alias("MAX_DATE_TIME")
+).show(truncate=False)
+
+# ============================================================
+# LOTS ONLY IN PROD
+# ============================================================
+
+print("\n" + "=" * 80)
+print("LOTS ONLY IN PROD")
+print("=" * 80)
+
+only_prod.select("LOT") \
+    .distinct() \
+    .orderBy("LOT") \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# LOTS ONLY IN FABRIC
+# ============================================================
+
+print("\n" + "=" * 80)
+print("LOTS ONLY IN FABRIC")
+print("=" * 80)
+
+only_fabric.select("LOT") \
+    .distinct() \
+    .orderBy("LOT") \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# KEY COMPARISON
+# ============================================================
+
+print("\n" + "=" * 80)
+print("KEY COMPARISON (LOT, DATE_TIME, HISTORDER)")
+print("=" * 80)
+
+common_keys = df_Prod.join(
+    df_Fabric,
+    key_cols,
+    "inner"
+)
+
+prod_missing = df_Prod.join(
+    df_Fabric,
+    key_cols,
+    "left_anti"
+)
+
+fabric_missing = df_Fabric.join(
+    df_Prod,
+    key_cols,
+    "left_anti"
+)
+
+print("Common Keys      :", common_keys.count())
+print("Prod Missing     :", prod_missing.count())
+print("Fabric Missing   :", fabric_missing.count())
+
+# ============================================================
+# DISTINCT LOT MISSING
+# ============================================================
+
+print("\n" + "=" * 80)
+print("DISTINCT LOTS MISSING IN FABRIC")
+print("=" * 80)
+
+prod_missing.select("LOT") \
+    .distinct() \
+    .orderBy("LOT") \
+    .limit(50) \
+    .show(50, False)
+
+print("\n" + "=" * 80)
+print("DISTINCT LOTS MISSING IN PROD")
+print("=" * 80)
+
+fabric_missing.select("LOT") \
+    .distinct() \
+    .orderBy("LOT") \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# HISTCODE DISTRIBUTION
+# ============================================================
+
+print("\n" + "=" * 80)
+print("HISTCODE COMPARISON")
+print("=" * 80)
+
+prod_hist = (
+    df_Prod.groupBy("HISTCODE")
+    .count()
+    .withColumnRenamed("count", "prod_count")
+)
+
+fabric_hist = (
+    df_Fabric.groupBy("HISTCODE")
+    .count()
+    .withColumnRenamed("count", "fabric_count")
+)
+
+hist_compare = (
+    prod_hist.join(
+        fabric_hist,
+        "HISTCODE",
+        "full"
+    )
+    .fillna(0)
+    .withColumn(
+        "difference",
+        F.col("fabric_count") - F.col("prod_count")
+    )
+)
+
+hist_compare.orderBy(
+    F.desc(F.abs(F.col("difference")))
+).limit(50).show(50, False)
+
+# ============================================================
+# OPER DISTRIBUTION
+# ============================================================
+
+print("\n" + "=" * 80)
+print("OPER DISTRIBUTION")
+print("=" * 80)
+
+oper_compare = (
+    df_Prod.groupBy("OPER")
+    .count()
+    .withColumnRenamed("count", "prod_count")
+    .join(
+        df_Fabric.groupBy("OPER")
+        .count()
+        .withColumnRenamed("count", "fabric_count"),
+        "OPER",
+        "full"
+    )
+    .fillna(0)
+)
+
+oper_compare.orderBy("OPER") \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# EMPID DISTRIBUTION
+# ============================================================
+
+print("\n" + "=" * 80)
+print("EMPID DISTRIBUTION")
+print("=" * 80)
+
+empid_compare = (
+    df_Prod.groupBy("EMPID")
+    .count()
+    .withColumnRenamed("count", "prod_count")
+    .join(
+        df_Fabric.groupBy("EMPID")
+        .count()
+        .withColumnRenamed("count", "fabric_count"),
+        "EMPID",
+        "full"
+    )
+    .fillna(0)
+)
+
+empid_compare.orderBy(
+    F.desc("fabric_count")
+).limit(50).show(50, False)
+
+# ============================================================
+# MACHINE DISTRIBUTION
+# ============================================================
+
+print("\n" + "=" * 80)
+print("MACHINE DISTRIBUTION")
+print("=" * 80)
+
+machine_compare = (
+    df_Prod.groupBy("MACHINE")
+    .count()
+    .withColumnRenamed("count", "prod_count")
+    .join(
+        df_Fabric.groupBy("MACHINE")
+        .count()
+        .withColumnRenamed("count", "fabric_count"),
+        "MACHINE",
+        "full"
+    )
+    .fillna(0)
+)
+
+machine_compare.orderBy("MACHINE") \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# SUMMARY METRICS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("SUMMARY METRICS")
+print("=" * 80)
+
+agg_prod = df_Prod.select(
+    F.count("*").alias("rows"),
+    F.countDistinct("LOT").alias("lots"),
+    F.countDistinct("OPER").alias("opers"),
+    F.countDistinct("USERNAME").alias("users"),
+    F.countDistinct("MACHINE").alias("machines"),
+    F.countDistinct("EMPID").alias("empids")
+)
+
+agg_fabric = df_Fabric.select(
+    F.count("*").alias("rows"),
+    F.countDistinct("LOT").alias("lots"),
+    F.countDistinct("OPER").alias("opers"),
+    F.countDistinct("USERNAME").alias("users"),
+    F.countDistinct("MACHINE").alias("machines"),
+    F.countDistinct("EMPID").alias("empids")
+)
+
+print("Prod Summary")
+agg_prod.show(truncate=False)
+
+print("Fabric Summary")
+agg_fabric.show(truncate=False)
+
+# ============================================================
+# ROW LEVEL ATTRIBUTE COMPARISON
+# ============================================================
+
+print("\n" + "=" * 80)
+print("ATTRIBUTE MISMATCH ANALYSIS")
+print("=" * 80)
+
+cols_to_compare = [
+    "OPER",
+    "OPERDESC",
+    "OPERLONGDESC",
+    "TRANS",
+    "HIST_REC",
+    "MACHINE",
+    "USERNAME",
+    "COMMAND",
+    "EMPID"
+]
+
+compare = (
+    df_Prod.alias("p")
+    .join(
+        df_Fabric.alias("f"),
+        key_cols
+    )
+)
+
+mismatch_summary = compare.agg(*[
+    F.sum(
+        F.when(
+            F.coalesce(F.col(f"p.{c}"), F.lit("")) !=
+            F.coalesce(F.col(f"f.{c}"), F.lit("")),
+            1
+        ).otherwise(0)
+    ).alias(f"{c}_MISMATCH")
+    for c in cols_to_compare
+])
+
+mismatch_summary.show(truncate=False)
+
+# ============================================================
+# TRANS MISMATCH DETAILS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("TRANS MISMATCH SAMPLE")
+print("=" * 80)
+
+compare.filter(
+    F.coalesce(F.col("p.TRANS"), F.lit("")) !=
+    F.coalesce(F.col("f.TRANS"), F.lit(""))
+).select(
+    "LOT",
+    "DATE_TIME",
+    "HISTORDER",
+    F.col("p.TRANS").alias("PROD_TRANS"),
+    F.col("f.TRANS").alias("FABRIC_TRANS")
+).limit(50).show(50, False)
+
+# ============================================================
+# COMMAND MISMATCH DETAILS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("COMMAND MISMATCH SAMPLE")
+print("=" * 80)
+
+compare.filter(
+    F.coalesce(F.col("p.COMMAND"), F.lit("")) !=
+    F.coalesce(F.col("f.COMMAND"), F.lit(""))
+).select(
+    "LOT",
+    "DATE_TIME",
+    "HISTORDER",
+    F.col("p.COMMAND").alias("PROD_COMMAND"),
+    F.col("f.COMMAND").alias("FABRIC_COMMAND")
+).limit(50).show(50, False)
+
+# ============================================================
+# HIST_REC MISMATCH DETAILS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("HIST_REC MISMATCH SAMPLE")
+print("=" * 80)
+
+compare.filter(
+    F.coalesce(F.col("p.HIST_REC"), F.lit("")) !=
+    F.coalesce(F.col("f.HIST_REC"), F.lit(""))
+).select(
+    "LOT",
+    "DATE_TIME",
+    "HISTORDER",
+    F.col("p.HIST_REC").alias("PROD_HIST_REC"),
+    F.col("f.HIST_REC").alias("FABRIC_HIST_REC")
+).limit(50).show(50, False)
+
+
+================================================================================
+ROW COUNTS
+================================================================================
+Prod Rows   : 8399
+Fabric Rows : 8399
+
+================================================================================
+PROD DISTINCT COUNTS
+================================================================================
+-RECORD 0------------
+ LOT          | 1181 
+ DATE_TIME    | 2566 
+ HISTORDER    | 341  
+ TRANS        | 37   
+ OPER         | 358  
+ MASK_LVL     | 53   
+ OPERDESC     | 119  
+ OPERLONGDESC | 417  
+ MACHINE      | 150  
+ USERNAME     | 179  
+ HIST_REC     | 1209 
+ HISTCODE     | 37   
+ COMMAND      | 18   
+ SHORTREPORT  | 2    
+ VIEWFLAG     | 2    
+ Is_Person    | 2    
+ IS_DUPLICATE | 2    
+ EMPID        | 61   
+
+
+================================================================================
+FABRIC DISTINCT COUNTS
+================================================================================
+-RECORD 0------------
+ LOT          | 1181 
+ DATE_TIME    | 2566 
+ HISTORDER    | 341  
+ TRANS        | 37   
+ OPER         | 358  
+ MASK_LVL     | 53   
+ OPERDESC     | 119  
+ OPERLONGDESC | 417  
+ MACHINE      | 150  
+ USERNAME     | 179  
+ HIST_REC     | 1209 
+ HISTCODE     | 37   
+ COMMAND      | 18   
+ SHORTREPORT  | 2    
+ VIEWFLAG     | 2    
+ Is_Person    | 2    
+ IS_DUPLICATE | 2    
+ EMPID        | 61   
+
+
+================================================================================
+FULL ROW COMPARISON
+================================================================================
+Common rows         : 8349
+Only in Prod        : 0
+Only in Fabric      : 0
+
+================================================================================
+MATCH PERCENTAGE
+================================================================================
+Prod Match % : 99.4
+
+================================================================================
+DUPLICATE ROW ANALYSIS
+================================================================================
+Prod duplicates   : 50
+Fabric duplicates : 50
+
+================================================================================
+DUPLICATE KEYS IN PROD
+================================================================================
++----------+----------------------+---------+-----+
+|LOT       |DATE_TIME             |HISTORDER|count|
++----------+----------------------+---------+-----+
+|T2636W2577|2026-05-03 00:31:29.22|2        |4    |
+|T2636W2577|2026-05-03 00:31:29.22|1        |4    |
+|T2649W0039|2026-05-03 00:31:29.6 |1        |4    |
+|T2636W2506|2026-05-03 00:31:32   |2        |4    |
+|T2636W2624|2026-05-03 00:31:30.03|1        |4    |
+|T2649W0028|2026-05-03 00:31:30.63|1        |4    |
+|T2636W2506|2026-05-03 00:31:32   |1        |4    |
+|T2651W4446|2026-05-03 00:31:29.72|2        |4    |
+|T2649W0033|2026-05-03 00:31:29.84|1        |4    |
+|T2646W3837|2026-05-03 00:31:31.59|2        |4    |
+|T2636W2514|2026-05-03 00:31:31.89|2        |4    |
+|T2649W0039|2026-05-03 00:31:29.6 |2        |4    |
+|T2642W4664|2026-05-03 00:31:30.43|2        |4    |
+|T2649W0036|2026-05-03 00:31:29.5 |1        |4    |
+|T2651W4426|2026-05-03 00:31:31.21|2        |4    |
+|T2636W2590|2026-05-03 00:31:30.93|2        |4    |
+|T2651W4432|2026-05-03 00:31:30.54|1        |4    |
+|T2649W0033|2026-05-03 00:31:29.84|2        |4    |
+|T2636W2605|2026-05-03 00:31:31.69|1        |4    |
+|T2650W1765|2026-05-03 00:31:30.23|2        |4    |
+|T2650W1744|2026-05-03 00:31:30.74|2        |4    |
+|T2650W1744|2026-05-03 00:31:30.74|1        |4    |
+|T2636W2590|2026-05-03 00:31:30.93|1        |4    |
+|T2636W2600|2026-05-03 00:31:31.11|1        |4    |
+|T2651W4434|2026-05-03 00:31:29.34|2        |4    |
+|T2646W3831|2026-05-03 00:31:31.79|2        |4    |
+|T2646W3831|2026-05-03 00:31:31.79|1        |4    |
+|T2636W2505|2026-05-03 00:31:31.39|2        |4    |
+|T2649W0031|2026-05-03 00:31:31.02|1        |4    |
+|T2650W1765|2026-05-03 00:31:30.23|1        |4    |
+|T2651W4446|2026-05-03 00:31:29.72|1        |4    |
+|T2636W2514|2026-05-03 00:31:31.89|1        |4    |
+|T2651W4426|2026-05-03 00:31:31.21|1        |4    |
+|T2651W4434|2026-05-03 00:31:29.34|1        |4    |
+|T2650W1766|2026-05-03 00:31:30.33|2        |4    |
+|T2636W2596|2026-05-03 00:31:30.82|1        |4    |
+|T2649W0031|2026-05-03 00:31:31.02|2        |4    |
+|T2636W2596|2026-05-03 00:31:30.82|2        |4    |
+|T2636W2605|2026-05-03 00:31:31.69|2        |4    |
+|T2651W4432|2026-05-03 00:31:30.54|2        |4    |
+|T2636W2624|2026-05-03 00:31:30.03|2        |4    |
+|T2650W1766|2026-05-03 00:31:30.33|1        |4    |
+|T2649W0028|2026-05-03 00:31:30.63|2        |4    |
+|T2642W4664|2026-05-03 00:31:30.43|1        |4    |
+|T2636W2505|2026-05-03 00:31:31.39|1        |4    |
+|T2649W0036|2026-05-03 00:31:29.5 |2        |4    |
+|T2636W2600|2026-05-03 00:31:31.11|2        |4    |
+|T2649W9473|2026-05-03 00:31:29.95|2        |4    |
+|T2649W9473|2026-05-03 00:31:29.95|1        |4    |
+|T2646W3837|2026-05-03 00:31:31.59|1        |4    |
++----------+----------------------+---------+-----+
+
+
+================================================================================
+PROD NULL PROFILE
+================================================================================
+-RECORD 0------------
+ LOT          | 0    
+ DATE_TIME    | 0    
+ HISTORDER    | 0    
+ TRANS        | 0    
+ OPER         | 0    
+ MASK_LVL     | 0    
+ OPERDESC     | 0    
+ OPERLONGDESC | 0    
+ MACHINE      | 3741 
+ USERNAME     | 0    
+ HIST_REC     | 0    
+ HISTCODE     | 0    
+ COMMAND      | 0    
+ SHORTREPORT  | 0    
+ VIEWFLAG     | 0    
+ Is_Person    | 0    
+ IS_DUPLICATE | 0    
+ EMPID        | 0    
+
+
+================================================================================
+FABRIC NULL PROFILE
+================================================================================
+-RECORD 0------------
+ LOT          | 0    
+ DATE_TIME    | 0    
+ HISTORDER    | 0    
+ TRANS        | 0    
+ OPER         | 0    
+ MASK_LVL     | 0    
+ OPERDESC     | 0    
+ OPERLONGDESC | 0    
+ MACHINE      | 3741 
+ USERNAME     | 0    
+ HIST_REC     | 0    
+ HISTCODE     | 0    
+ COMMAND      | 0    
+ SHORTREPORT  | 0    
+ VIEWFLAG     | 0    
+ Is_Person    | 0    
+ IS_DUPLICATE | 0    
+ EMPID        | 0    
+
+
+================================================================================
+DATE RANGE COMPARISON
+================================================================================
+Prod
++----------------------+----------------------+
+|MIN_DATE_TIME         |MAX_DATE_TIME         |
++----------------------+----------------------+
+|2026-05-03 00:00:00.26|2026-05-03 00:59:57.43|
++----------------------+----------------------+
+
+Fabric
++----------------------+----------------------+
+|MIN_DATE_TIME         |MAX_DATE_TIME         |
++----------------------+----------------------+
+|2026-05-03 00:00:00.26|2026-05-03 00:59:57.43|
++----------------------+----------------------+
+
+
+================================================================================
+LOTS ONLY IN PROD
+================================================================================
++---+
+|LOT|
++---+
++---+
+
+
+================================================================================
+LOTS ONLY IN FABRIC
+================================================================================
++---+
+|LOT|
++---+
++---+
+
+
+================================================================================
+KEY COMPARISON (LOT, DATE_TIME, HISTORDER)
+================================================================================
+Common Keys      : 10043
+Prod Missing     : 0
+Fabric Missing   : 0
+
+================================================================================
+DISTINCT LOTS MISSING IN FABRIC
+================================================================================
++---+
+|LOT|
++---+
++---+
+
+
+================================================================================
+DISTINCT LOTS MISSING IN PROD
+================================================================================
++---+
+|LOT|
++---+
++---+
+
+
+================================================================================
+HISTCODE COMPARISON
+================================================================================
++--------+----------+------------+----------+
+|HISTCODE|prod_count|fabric_count|difference|
++--------+----------+------------+----------+
+|AF      |6         |6           |0         |
+|AR      |119       |119         |0         |
+|CM      |3248      |3248        |0         |
+|CR      |1         |1           |0         |
+|CS      |227       |227         |0         |
+|DD      |1         |1           |0         |
+|DK      |159       |159         |0         |
+|DL      |301       |301         |0         |
+|EM      |45        |45          |0         |
+|EN      |45        |45          |0         |
+|FG      |4         |4           |0         |
+|HC      |26        |26          |0         |
+|HT      |1         |1           |0         |
+|IN      |266       |266         |0         |
+|KL      |333       |333         |0         |
+|KW      |25        |25          |0         |
+|LA      |279       |279         |0         |
+|LL      |1281      |1281        |0         |
+|MV      |277       |277         |0         |
+|OI      |226       |226         |0         |
+|OW      |1         |1           |0         |
+|P1      |2         |2           |0         |
+|PT      |137       |137         |0         |
+|RE      |1         |1           |0         |
+|RM      |2         |2           |0         |
+|RP      |5         |5           |0         |
+|RS      |152       |152         |0         |
+|RT      |334       |334         |0         |
+|SE      |20        |20          |0         |
+|SK      |22        |22          |0         |
+|SR      |278       |278         |0         |
+|TN      |1         |1           |0         |
+|TX      |338       |338         |0         |
+|UD      |30        |30          |0         |
+|VA      |1         |1           |0         |
+|WM      |204       |204         |0         |
+|WR      |1         |1           |0         |
++--------+----------+------------+----------+
+
+
+================================================================================
+OPER DISTRIBUTION
+================================================================================
++-----+----------+------------+
+|OPER |prod_count|fabric_count|
++-----+----------+------------+
+|-100 |1511      |1511        |
+|20205|3         |3           |
+|22024|30        |30          |
+|22188|100       |100         |
+|22236|2         |2           |
+|22775|3         |3           |
+|26572|1         |1           |
+|40200|82        |82          |
+|40203|9         |9           |
+|40204|7         |7           |
+|40206|12        |12          |
+|40209|6         |6           |
+|40211|24        |24          |
+|40212|6         |6           |
+|40214|9         |9           |
+|40216|2         |2           |
+|40218|40        |40          |
+|40300|14        |14          |
+|40301|2         |2           |
+|40303|13        |13          |
+|40304|9         |9           |
+|40305|4         |4           |
+|40306|10        |10          |
+|40307|13        |13          |
+|40309|4         |4           |
+|40311|31        |31          |
+|40313|30        |30          |
+|40314|18        |18          |
+|40318|61        |61          |
+|40322|65        |65          |
+|40325|4         |4           |
+|40351|4         |4           |
+|40352|158       |158         |
+|40353|7         |7           |
+|40354|6         |6           |
+|40356|108       |108         |
+|40358|34        |34          |
+|40360|122       |122         |
+|40362|13        |13          |
+|40363|10        |10          |
+|40364|4         |4           |
+|40400|32        |32          |
+|40402|4         |4           |
+|40404|16        |16          |
+|40405|26        |26          |
+|40406|9         |9           |
+|40407|13        |13          |
+|40408|6         |6           |
+|40409|6         |6           |
+|40410|9         |9           |
++-----+----------+------------+
+
+
+================================================================================
+EMPID DISTRIBUTION
+================================================================================
++-----+----------+------------+
+|EMPID|prod_count|fabric_count|
++-----+----------+------------+
+|SYSTM|1823      |1823        |
+|6028 |1346      |1346        |
+|0    |1263      |1263        |
+|5852 |1078      |1078        |
+|99999|545       |545         |
+|6164 |292       |292         |
+|5499 |162       |162         |
+|5524 |133       |133         |
+|6048 |91        |91          |
+|6134 |80        |80          |
+|5849 |76        |76          |
+|14018|67        |67          |
+|6010 |63        |63          |
+|6076 |62        |62          |
+|5632 |61        |61          |
+|4556 |58        |58          |
+|6047 |55        |55          |
+|6118 |53        |53          |
+|14009|52        |52          |
+|5840 |51        |51          |
+|5170 |50        |50          |
+|6167 |49        |49          |
+|8415 |48        |48          |
+|5881 |46        |46          |
+|5973 |46        |46          |
+|8263 |46        |46          |
+|5909 |44        |44          |
+|8363 |42        |42          |
+|5661 |40        |40          |
+|8038 |40        |40          |
+|6128 |38        |38          |
+|5841 |37        |37          |
+|5228 |35        |35          |
+|14026|34        |34          |
+|6142 |33        |33          |
+|14049|32        |32          |
+|5609 |32        |32          |
+|6114 |32        |32          |
+|8198 |30        |30          |
+|5157 |25        |25          |
+|14045|20        |20          |
+|4087 |19        |19          |
+|5854 |19        |19          |
+|5823 |17        |17          |
+|6173 |15        |15          |
+|6161 |13        |13          |
+|6088 |12        |12          |
+|5940 |11        |11          |
+|6011 |11        |11          |
+|6078 |11        |11          |
++-----+----------+------------+
+
+
+================================================================================
+MACHINE DISTRIBUTION
+================================================================================
++-----------+----------+------------+
+|MACHINE    |prod_count|fabric_count|
++-----------+----------+------------+
+|NULL       |3741      |0           |
+|NULL       |0         |3741        |
+|ALPHA307   |4         |4           |
+|ALPHA314   |12        |12          |
+|ALPHA316   |6         |6           |
+|ALPHA804   |8         |8           |
+|ALPHA805   |18        |18          |
+|AME10      |31        |31          |
+|AME11      |4         |4           |
+|AME15      |9         |9           |
+|AME19      |25        |25          |
+|AME20      |15        |15          |
+|AME23      |11        |11          |
+|AME309     |12        |12          |
+|AME312     |2         |2           |
+|AME317     |7         |7           |
+|AME325     |15        |15          |
+|AME326     |3         |3           |
+|AME327     |11        |11          |
+|AME328     |29        |29          |
+|ASML100-301|13        |13          |
+|ASML100-303|2         |2           |
+|ASML100-305|32        |32          |
+|ASML100-308|30        |30          |
+|ASML100-318|8         |8           |
+|ASML100-319|38        |38          |
+|ATLAS305   |43        |43          |
+|CDSEM304   |86        |86          |
+|CMP1       |10        |10          |
+|ELIPS311   |77        |77          |
+|ENDURA1    |11        |11          |
+|ENDURA2    |8         |8           |
+|ENDURA306  |17        |17          |
+|EPI6       |3         |3           |
+|FUSION302  |7         |7           |
+|FUSION303  |15        |15          |
+|FUSION304  |6         |6           |
+|FUSION305  |18        |18          |
+|FUSION306  |4         |4           |
+|GSD1       |82        |82          |
+|GSD2       |20        |20          |
+|GSD3       |32        |32          |
+|GSD308     |42        |42          |
+|GSD5       |58        |58          |
+|GSD7       |52        |52          |
+|HD302      |6         |6           |
+|HE301      |43        |43          |
+|INSP309    |96        |96          |
+|INSP312    |64        |64          |
+|INSP315    |51        |51          |
++-----------+----------+------------+
+
+
+================================================================================
+SUMMARY METRICS
+================================================================================
+Prod Summary
++----+----+-----+-----+--------+------+
+|rows|lots|opers|users|machines|empids|
++----+----+-----+-----+--------+------+
+|8399|1181|358  |179  |150     |61    |
++----+----+-----+-----+--------+------+
+
+Fabric Summary
++----+----+-----+-----+--------+------+
+|rows|lots|opers|users|machines|empids|
++----+----+-----+-----+--------+------+
+|8399|1181|358  |179  |150     |61    |
++----+----+-----+-----+--------+------+
+
+
+================================================================================
+ATTRIBUTE MISMATCH ANALYSIS
+================================================================================
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+
+|OPER_MISMATCH|OPERDESC_MISMATCH|OPERLONGDESC_MISMATCH|TRANS_MISMATCH|HIST_REC_MISMATCH|MACHINE_MISMATCH|USERNAME_MISMATCH|COMMAND_MISMATCH|EMPID_MISMATCH|
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+
+|4            |10               |10                   |1336          |1494             |12              |14               |12              |0             |
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+
+
+
+================================================================================
+TRANS MISMATCH SAMPLE
+================================================================================
++---------+-----------------------+---------+----------+------------+
+|LOT      |DATE_TIME              |HISTORDER|PROD_TRANS|FABRIC_TRANS|
++---------+-----------------------+---------+----------+------------+
+|5941A0B4 |2026-05-03 00:00:17.303|1        |TRANSITION|COMMENT     |
+|5941A0B4 |2026-05-03 00:00:17.303|1        |COMMENT   |TRANSITION  |
+|7610A1U8 |2026-05-03 00:00:20.83 |1        |TRANSITION|COMMENT     |
+|7610A1U8 |2026-05-03 00:00:20.83 |1        |COMMENT   |TRANSITION  |
+|7975A088 |2026-05-03 00:00:30.613|1        |WAIT MVOU |COMMENT     |
+|7975A088 |2026-05-03 00:00:30.613|1        |COMMENT   |WAIT MVOU   |
+|5539A178 |2026-05-03 00:00:32.223|1        |TRANSITION|COMMENT     |
+|5539A178 |2026-05-03 00:00:32.223|1        |COMMENT   |TRANSITION  |
+|6098A0B9 |2026-05-03 00:01:01.84 |1        |TRANSITION|COMMENT     |
+|6098A0B9 |2026-05-03 00:01:01.84 |1        |COMMENT   |TRANSITION  |
+|5297TB085|2026-05-03 00:01:29.35 |1        |WAIT MVOU |COMMENT     |
+|5297TB085|2026-05-03 00:01:29.35 |1        |COMMENT   |WAIT MVOU   |
+|6514A3N1 |2026-05-03 00:01:42.523|1        |DISPATCH  |COMMENT     |
+|6514A3N1 |2026-05-03 00:01:42.523|1        |COMMENT   |DISPATCH    |
+|6514A3L7 |2026-05-03 00:01:42.73 |1        |DISPATCH  |COMMENT     |
+|6514A3L7 |2026-05-03 00:01:42.73 |1        |COMMENT   |DISPATCH    |
+|5078A0A4 |2026-05-03 00:01:42.987|1        |DISPATCH  |COMMENT     |
+|5078A0A4 |2026-05-03 00:01:42.987|1        |COMMENT   |DISPATCH    |
+|6500A257 |2026-05-03 00:01:43.193|1        |DISPATCH  |COMMENT     |
+|6500A257 |2026-05-03 00:01:43.193|1        |COMMENT   |DISPATCH    |
+|7745A1E6 |2026-05-03 00:01:47.737|1        |DISPATCH  |COMMENT     |
+|7745A1E6 |2026-05-03 00:01:47.737|1        |COMMENT   |DISPATCH    |
+|6053A055 |2026-05-03 00:01:48.03 |1        |DISPATCH  |COMMENT     |
+|6053A055 |2026-05-03 00:01:48.03 |1        |COMMENT   |DISPATCH    |
+|5639A9U0 |2026-05-03 00:01:59.393|1        |DISPATCH  |COMMENT     |
+|5639A9U0 |2026-05-03 00:01:59.393|1        |COMMENT   |DISPATCH    |
+|6053A049 |2026-05-03 00:02:01.943|1        |DISPATCH  |COMMENT     |
+|6053A049 |2026-05-03 00:02:01.943|1        |COMMENT   |DISPATCH    |
+|5639A9R0 |2026-05-03 00:02:02.223|1        |DISPATCH  |COMMENT     |
+|5639A9R0 |2026-05-03 00:02:02.223|1        |COMMENT   |DISPATCH    |
+|7868A1G7 |2026-05-03 00:02:02.48 |1        |DISPATCH  |COMMENT     |
+|7868A1G7 |2026-05-03 00:02:02.48 |1        |COMMENT   |DISPATCH    |
+|7132A172 |2026-05-03 00:02:24.717|1        |DISPATCH  |COMMENT     |
+|7132A172 |2026-05-03 00:02:24.717|1        |COMMENT   |DISPATCH    |
+|5539A151 |2026-05-03 00:02:25.333|1        |DISPATCH  |COMMENT     |
+|5539A151 |2026-05-03 00:02:25.333|1        |COMMENT   |DISPATCH    |
+|5620AFV3 |2026-05-03 00:02:39.947|1        |TRANSITION|COMMENT     |
+|5620AFV3 |2026-05-03 00:02:39.947|1        |COMMENT   |TRANSITION  |
+|6389A042 |2026-05-03 00:02:51.88 |1        |WAIT MVOU |COMMENT     |
+|6389A042 |2026-05-03 00:02:51.88 |1        |COMMENT   |WAIT MVOU   |
+|6440A8F7 |2026-05-03 00:02:51.927|1        |DISPATCH  |COMMENT     |
+|6440A8F7 |2026-05-03 00:02:51.927|1        |COMMENT   |DISPATCH    |
+|7412A0A8 |2026-05-03 00:03:00.13 |1        |TRANSITION|COMMENT     |
+|7412A0A8 |2026-05-03 00:03:00.13 |1        |COMMENT   |TRANSITION  |
+|4562AZ88 |2026-05-03 00:03:02.997|1        |TRANSITION|COMMENT     |
+|4562AZ88 |2026-05-03 00:03:02.997|1        |COMMENT   |TRANSITION  |
+|5620AFV4 |2026-05-03 00:03:04.983|1        |TRANSITION|COMMENT     |
+|5620AFV4 |2026-05-03 00:03:04.983|1        |COMMENT   |TRANSITION  |
+|5605A056 |2026-05-03 00:03:08.52 |1        |WAIT MVOU |COMMENT     |
+|5605A056 |2026-05-03 00:03:08.52 |1        |COMMENT   |WAIT MVOU   |
++---------+-----------------------+---------+----------+------------+
+
+
+================================================================================
+COMMAND MISMATCH SAMPLE
+================================================================================
++--------+-----------------------+---------+------------+--------------+
+|LOT     |DATE_TIME              |HISTORDER|PROD_COMMAND|FABRIC_COMMAND|
++--------+-----------------------+---------+------------+--------------+
+|5941A0B9|2026-05-03 00:22:03.3  |1        |LMVR        |TRAN          |
+|5941A0B9|2026-05-03 00:22:03.3  |1        |LMVR        |TRAN          |
+|5941A0B9|2026-05-03 00:22:03.3  |1        |TRAN        |LMVR          |
+|5941A0B9|2026-05-03 00:22:03.3  |1        |TRAN        |LMVR          |
+|5539A168|2026-05-03 00:32:54.023|1        |LEDC        |MVIN          |
+|5539A168|2026-05-03 00:32:54.023|1        |LEDC        |MVIN          |
+|5539A168|2026-05-03 00:32:54.023|1        |MVIN        |LEDC          |
+|5539A168|2026-05-03 00:32:54.023|1        |MVIN        |LEDC          |
+|6833A032|2026-05-03 00:43:57.897|1        |LEDC        |TRAN          |
+|6833A032|2026-05-03 00:43:57.897|1        |TRAN        |LEDC          |
+|6833A032|2026-05-03 00:44:00.323|1        |LEDC        |MVIN          |
+|6833A032|2026-05-03 00:44:00.323|1        |MVIN        |LEDC          |
++--------+-----------------------+---------+------------+--------------+
+
+
+================================================================================
+HIST_REC MISMATCH SAMPLE
+================================================================================
++---------+-----------------------+---------+--------------------------+--------------------------+
+|LOT      |DATE_TIME              |HISTORDER|PROD_HIST_REC             |FABRIC_HIST_REC           |
++---------+-----------------------+---------+--------------------------+--------------------------+
+|5941A0B4 |2026-05-03 00:00:17.303|1        |QTY: 25 TD                |LotMoveIn Part 1          |
+|5941A0B4 |2026-05-03 00:00:17.303|1        |LotMoveIn Part 1          |QTY: 25 TD                |
+|7610A1U8 |2026-05-03 00:00:20.83 |1        |QTY: 25 TD                |LotMoveIn Part 1          |
+|7610A1U8 |2026-05-03 00:00:20.83 |1        |LotMoveIn Part 1          |QTY: 25 TD                |
+|7975A088 |2026-05-03 00:00:30.613|1        |QTY: 25                   |Automated Move            |
+|7975A088 |2026-05-03 00:00:30.613|1        |Automated Move            |QTY: 25                   |
+|5539A178 |2026-05-03 00:00:32.223|1        |QTY: 25 TD                |LotMoveIn Part 1          |
+|5539A178 |2026-05-03 00:00:32.223|1        |LotMoveIn Part 1          |QTY: 25 TD                |
+|6098A0B9 |2026-05-03 00:01:01.84 |1        |QTY: 25 TD                |LotMoveIn Part 1          |
+|6098A0B9 |2026-05-03 00:01:01.84 |1        |LotMoveIn Part 1          |QTY: 25 TD                |
+|5297TB085|2026-05-03 00:01:29.35 |1        |QTY: 25                   |Automated Move            |
+|5297TB085|2026-05-03 00:01:29.35 |1        |Automated Move            |QTY: 25                   |
+|6514A3N1 |2026-05-03 00:01:42.523|1        |QTY: 25                   |Dispatched by Local Rules.|
+|6514A3N1 |2026-05-03 00:01:42.523|1        |Dispatched by Local Rules.|QTY: 25                   |
+|6514A3L7 |2026-05-03 00:01:42.73 |1        |QTY: 25                   |Dispatched by Local Rules.|
+|6514A3L7 |2026-05-03 00:01:42.73 |1        |Dispatched by Local Rules.|QTY: 25                   |
+|5078A0A4 |2026-05-03 00:01:42.987|1        |QTY: 25                   |Dispatched by Local Rules.|
+|5078A0A4 |2026-05-03 00:01:42.987|1        |Dispatched by Local Rules.|QTY: 25                   |
+|6500A257 |2026-05-03 00:01:43.193|1        |QTY: 25                   |Dispatched by Local Rules.|
+|6500A257 |2026-05-03 00:01:43.193|1        |Dispatched by Local Rules.|QTY: 25                   |
+|7745A1E6 |2026-05-03 00:01:47.737|1        |QTY: 25                   |Dispatched by Local Rules.|
+|7745A1E6 |2026-05-03 00:01:47.737|1        |Dispatched by Local Rules.|QTY: 25                   |
+|6053A055 |2026-05-03 00:01:48.03 |1        |QTY: 25                   |Dispatched by Local Rules.|
+|6053A055 |2026-05-03 00:01:48.03 |1        |Dispatched by Local Rules.|QTY: 25                   |
+|5639A9U0 |2026-05-03 00:01:59.393|1        |QTY: 25                   |Dispatched by Local Rules.|
+|5639A9U0 |2026-05-03 00:01:59.393|1        |Dispatched by Local Rules.|QTY: 25                   |
+|6053A049 |2026-05-03 00:02:01.943|1        |QTY: 25                   |Dispatched by Local Rules.|
+|6053A049 |2026-05-03 00:02:01.943|1        |Dispatched by Local Rules.|QTY: 25                   |
+|5639A9R0 |2026-05-03 00:02:02.223|1        |QTY: 25                   |Dispatched by Local Rules.|
+|5639A9R0 |2026-05-03 00:02:02.223|1        |Dispatched by Local Rules.|QTY: 25                   |
+|7868A1G7 |2026-05-03 00:02:02.48 |1        |QTY: 25                   |Dispatched by Local Rules.|
+|7868A1G7 |2026-05-03 00:02:02.48 |1        |Dispatched by Local Rules.|QTY: 25                   |
+|7132A172 |2026-05-03 00:02:24.717|1        |QTY: 25                   |Dispatched by Local Rules.|
+|7132A172 |2026-05-03 00:02:24.717|1        |Dispatched by Local Rules.|QTY: 25                   |
+|5539A151 |2026-05-03 00:02:25.333|1        |QTY: 25                   |Dispatched by Local Rules.|
+|5539A151 |2026-05-03 00:02:25.333|1        |Dispatched by Local Rules.|QTY: 25                   |
+|5620AFV3 |2026-05-03 00:02:39.947|1        |QTY: 25 TD                |LotMoveIn Part 1          |
+|5620AFV3 |2026-05-03 00:02:39.947|1        |LotMoveIn Part 1          |QTY: 25 TD                |
+|6389A042 |2026-05-03 00:02:51.88 |1        |QTY: 25                   |Automated Move            |
+|6389A042 |2026-05-03 00:02:51.88 |1        |Automated Move            |QTY: 25                   |
+|6440A8F7 |2026-05-03 00:02:51.927|1        |QTY: 25                   |Dispatched by Local Rules.|
+|6440A8F7 |2026-05-03 00:02:51.927|1        |Dispatched by Local Rules.|QTY: 25                   |
+|7412A0A8 |2026-05-03 00:03:00.13 |1        |QTY: 25 TD                |LotMoveIn Part 1          |
+|7412A0A8 |2026-05-03 00:03:00.13 |1        |LotMoveIn Part 1          |QTY: 25 TD                |
+|4562AZ88 |2026-05-03 00:03:02.997|1        |QTY: 25 TD                |LotMoveIn Part 1          |
+|4562AZ88 |2026-05-03 00:03:02.997|1        |LotMoveIn Part 1          |QTY: 25 TD                |
+|5620AFV4 |2026-05-03 00:03:04.983|1        |QTY: 25 TD                |LotMoveIn Part 1          |
+|5620AFV4 |2026-05-03 00:03:04.983|1        |LotMoveIn Part 1          |QTY: 25 TD                |
+|5605A056 |2026-05-03 00:03:08.52 |1        |QTY: 25                   |Automated Move            |
+|5605A056 |2026-05-03 00:03:08.52 |1        |Automated Move            |QTY: 25                   |
++---------+-----------------------+---------+--------------------------+--------------------------+
+
+
+
+
+Time frame 2 
+%%pyspark
+from pyspark.sql import functions as F
+
+# ============================================================
+# LOAD DATA
+# ============================================================
+
+df_Prod = spark.read.csv(
+    "abfss://9dd39a9d-2357-46a3-913d-1ff996531e62@onelake.dfs.fabric.microsoft.com/26a167a1-535e-4366-95da-c08c7730c83b/Files/v2(10thAug04-05)Prod.csv",
+    header=True,
+    inferSchema=True
+)
+
+df_Fabric = spark.read.csv(
+    "abfss://9dd39a9d-2357-46a3-913d-1ff996531e62@onelake.dfs.fabric.microsoft.com/26a167a1-535e-4366-95da-c08c7730c83b/Files/v2(10thAug04-05)Fabric.csv",
+    header=True,
+    inferSchema=True
+)
+
+print("=" * 80)
+print("ROW COUNTS")
+print("=" * 80)
+
+prod_count = df_Prod.count()
+fabric_count = df_Fabric.count()
+
+print(f"Prod Rows   : {prod_count}")
+print(f"Fabric Rows : {fabric_count}")
+
+# ============================================================
+# DISTINCT COUNT PROFILE
+# ============================================================
+
+print("\n" + "=" * 80)
+print("PROD DISTINCT COUNTS")
+print("=" * 80)
+
+df_Prod.select(
+    *[
+        F.countDistinct(c).alias(c)
+        for c in df_Prod.columns
+    ]
+).show(vertical=True, truncate=False)
+
+print("\n" + "=" * 80)
+print("FABRIC DISTINCT COUNTS")
+print("=" * 80)
+
+df_Fabric.select(
+    *[
+        F.countDistinct(c).alias(c)
+        for c in df_Fabric.columns
+    ]
+).show(vertical=True, truncate=False)
+
+# ============================================================
+# ROW COMPARISON
+# ============================================================
+
+print("\n" + "=" * 80)
+print("FULL ROW COMPARISON")
+print("=" * 80)
+
+common_rows = df_Prod.intersect(df_Fabric).count()
+
+only_prod = df_Prod.exceptAll(df_Fabric)
+only_fabric = df_Fabric.exceptAll(df_Prod)
+
+only_prod_count = only_prod.count()
+only_fabric_count = only_fabric.count()
+
+print("Common rows         :", common_rows)
+print("Only in Prod        :", only_prod_count)
+print("Only in Fabric      :", only_fabric_count)
+
+# ============================================================
+# MATCH %
+# ============================================================
+
+print("\n" + "=" * 80)
+print("MATCH PERCENTAGE")
+print("=" * 80)
+
+match_pct = round(common_rows * 100 / prod_count, 2)
+
+print(f"Prod Match % : {match_pct}")
+
+# ============================================================
+# DUPLICATE ROWS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("DUPLICATE ROW ANALYSIS")
+print("=" * 80)
+
+prod_duplicates = prod_count - df_Prod.distinct().count()
+fabric_duplicates = fabric_count - df_Fabric.distinct().count()
+
+print("Prod duplicates   :", prod_duplicates)
+print("Fabric duplicates :", fabric_duplicates)
+
+# ============================================================
+# DUPLICATED KEYS
+# ============================================================
+
+key_cols = ["LOT", "DATE_TIME", "HISTORDER"]
+
+print("\n" + "=" * 80)
+print("DUPLICATE KEYS IN PROD")
+print("=" * 80)
+
+df_Prod.groupBy(*key_cols) \
+    .count() \
+    .filter("count > 1") \
+    .orderBy(F.desc("count")) \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# NULL ANALYSIS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("PROD NULL PROFILE")
+print("=" * 80)
+
+df_Prod.select([
+    F.sum(F.col(c).isNull().cast("int")).alias(c)
+    for c in df_Prod.columns
+]).show(vertical=True)
+
+print("\n" + "=" * 80)
+print("FABRIC NULL PROFILE")
+print("=" * 80)
+
+df_Fabric.select([
+    F.sum(F.col(c).isNull().cast("int")).alias(c)
+    for c in df_Fabric.columns
+]).show(vertical=True)
+
+# ============================================================
+# DATE RANGE CHECK
+# ============================================================
+
+print("\n" + "=" * 80)
+print("DATE RANGE COMPARISON")
+print("=" * 80)
+
+print("Prod")
+df_Prod.select(
+    F.min("DATE_TIME").alias("MIN_DATE_TIME"),
+    F.max("DATE_TIME").alias("MAX_DATE_TIME")
+).show(truncate=False)
+
+print("Fabric")
+df_Fabric.select(
+    F.min("DATE_TIME").alias("MIN_DATE_TIME"),
+    F.max("DATE_TIME").alias("MAX_DATE_TIME")
+).show(truncate=False)
+
+# ============================================================
+# LOTS ONLY IN PROD
+# ============================================================
+
+print("\n" + "=" * 80)
+print("LOTS ONLY IN PROD")
+print("=" * 80)
+
+only_prod.select("LOT") \
+    .distinct() \
+    .orderBy("LOT") \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# LOTS ONLY IN FABRIC
+# ============================================================
+
+print("\n" + "=" * 80)
+print("LOTS ONLY IN FABRIC")
+print("=" * 80)
+
+only_fabric.select("LOT") \
+    .distinct() \
+    .orderBy("LOT") \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# KEY COMPARISON
+# ============================================================
+
+print("\n" + "=" * 80)
+print("KEY COMPARISON (LOT, DATE_TIME, HISTORDER)")
+print("=" * 80)
+
+common_keys = df_Prod.join(
+    df_Fabric,
+    key_cols,
+    "inner"
+)
+
+prod_missing = df_Prod.join(
+    df_Fabric,
+    key_cols,
+    "left_anti"
+)
+
+fabric_missing = df_Fabric.join(
+    df_Prod,
+    key_cols,
+    "left_anti"
+)
+
+print("Common Keys      :", common_keys.count())
+print("Prod Missing     :", prod_missing.count())
+print("Fabric Missing   :", fabric_missing.count())
+
+# ============================================================
+# DISTINCT LOT MISSING
+# ============================================================
+
+print("\n" + "=" * 80)
+print("DISTINCT LOTS MISSING IN FABRIC")
+print("=" * 80)
+
+prod_missing.select("LOT") \
+    .distinct() \
+    .orderBy("LOT") \
+    .limit(50) \
+    .show(50, False)
+
+print("\n" + "=" * 80)
+print("DISTINCT LOTS MISSING IN PROD")
+print("=" * 80)
+
+fabric_missing.select("LOT") \
+    .distinct() \
+    .orderBy("LOT") \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# HISTCODE DISTRIBUTION
+# ============================================================
+
+print("\n" + "=" * 80)
+print("HISTCODE COMPARISON")
+print("=" * 80)
+
+prod_hist = (
+    df_Prod.groupBy("HISTCODE")
+    .count()
+    .withColumnRenamed("count", "prod_count")
+)
+
+fabric_hist = (
+    df_Fabric.groupBy("HISTCODE")
+    .count()
+    .withColumnRenamed("count", "fabric_count")
+)
+
+hist_compare = (
+    prod_hist.join(
+        fabric_hist,
+        "HISTCODE",
+        "full"
+    )
+    .fillna(0)
+    .withColumn(
+        "difference",
+        F.col("fabric_count") - F.col("prod_count")
+    )
+)
+
+hist_compare.orderBy(
+    F.desc(F.abs(F.col("difference")))
+).limit(50).show(50, False)
+
+# ============================================================
+# OPER DISTRIBUTION
+# ============================================================
+
+print("\n" + "=" * 80)
+print("OPER DISTRIBUTION")
+print("=" * 80)
+
+oper_compare = (
+    df_Prod.groupBy("OPER")
+    .count()
+    .withColumnRenamed("count", "prod_count")
+    .join(
+        df_Fabric.groupBy("OPER")
+        .count()
+        .withColumnRenamed("count", "fabric_count"),
+        "OPER",
+        "full"
+    )
+    .fillna(0)
+)
+
+oper_compare.orderBy("OPER") \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# EMPID DISTRIBUTION
+# ============================================================
+
+print("\n" + "=" * 80)
+print("EMPID DISTRIBUTION")
+print("=" * 80)
+
+empid_compare = (
+    df_Prod.groupBy("EMPID")
+    .count()
+    .withColumnRenamed("count", "prod_count")
+    .join(
+        df_Fabric.groupBy("EMPID")
+        .count()
+        .withColumnRenamed("count", "fabric_count"),
+        "EMPID",
+        "full"
+    )
+    .fillna(0)
+)
+
+empid_compare.orderBy(
+    F.desc("fabric_count")
+).limit(50).show(50, False)
+
+# ============================================================
+# MACHINE DISTRIBUTION
+# ============================================================
+
+print("\n" + "=" * 80)
+print("MACHINE DISTRIBUTION")
+print("=" * 80)
+
+machine_compare = (
+    df_Prod.groupBy("MACHINE")
+    .count()
+    .withColumnRenamed("count", "prod_count")
+    .join(
+        df_Fabric.groupBy("MACHINE")
+        .count()
+        .withColumnRenamed("count", "fabric_count"),
+        "MACHINE",
+        "full"
+    )
+    .fillna(0)
+)
+
+machine_compare.orderBy("MACHINE") \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# SUMMARY METRICS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("SUMMARY METRICS")
+print("=" * 80)
+
+agg_prod = df_Prod.select(
+    F.count("*").alias("rows"),
+    F.countDistinct("LOT").alias("lots"),
+    F.countDistinct("OPER").alias("opers"),
+    F.countDistinct("USERNAME").alias("users"),
+    F.countDistinct("MACHINE").alias("machines"),
+    F.countDistinct("EMPID").alias("empids")
+)
+
+agg_fabric = df_Fabric.select(
+    F.count("*").alias("rows"),
+    F.countDistinct("LOT").alias("lots"),
+    F.countDistinct("OPER").alias("opers"),
+    F.countDistinct("USERNAME").alias("users"),
+    F.countDistinct("MACHINE").alias("machines"),
+    F.countDistinct("EMPID").alias("empids")
+)
+
+print("Prod Summary")
+agg_prod.show(truncate=False)
+
+print("Fabric Summary")
+agg_fabric.show(truncate=False)
+
+# ============================================================
+# ROW LEVEL ATTRIBUTE COMPARISON
+# ============================================================
+
+print("\n" + "=" * 80)
+print("ATTRIBUTE MISMATCH ANALYSIS")
+print("=" * 80)
+
+cols_to_compare = [
+    "OPER",
+    "OPERDESC",
+    "OPERLONGDESC",
+    "TRANS",
+    "HIST_REC",
+    "MACHINE",
+    "USERNAME",
+    "COMMAND",
+    "EMPID"
+]
+
+compare = (
+    df_Prod.alias("p")
+    .join(
+        df_Fabric.alias("f"),
+        key_cols
+    )
+)
+
+mismatch_summary = compare.agg(*[
+    F.sum(
+        F.when(
+            F.coalesce(F.col(f"p.{c}"), F.lit("")) !=
+            F.coalesce(F.col(f"f.{c}"), F.lit("")),
+            1
+        ).otherwise(0)
+    ).alias(f"{c}_MISMATCH")
+    for c in cols_to_compare
+])
+
+mismatch_summary.show(truncate=False)
+
+# ============================================================
+# TRANS MISMATCH DETAILS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("TRANS MISMATCH SAMPLE")
+print("=" * 80)
+
+compare.filter(
+    F.coalesce(F.col("p.TRANS"), F.lit("")) !=
+    F.coalesce(F.col("f.TRANS"), F.lit(""))
+).select(
+    "LOT",
+    "DATE_TIME",
+    "HISTORDER",
+    F.col("p.TRANS").alias("PROD_TRANS"),
+    F.col("f.TRANS").alias("FABRIC_TRANS")
+).limit(50).show(50, False)
+
+# ============================================================
+# COMMAND MISMATCH DETAILS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("COMMAND MISMATCH SAMPLE")
+print("=" * 80)
+
+compare.filter(
+    F.coalesce(F.col("p.COMMAND"), F.lit("")) !=
+    F.coalesce(F.col("f.COMMAND"), F.lit(""))
+).select(
+    "LOT",
+    "DATE_TIME",
+    "HISTORDER",
+    F.col("p.COMMAND").alias("PROD_COMMAND"),
+    F.col("f.COMMAND").alias("FABRIC_COMMAND")
+).limit(50).show(50, False)
+
+# ============================================================
+# HIST_REC MISMATCH DETAILS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("HIST_REC MISMATCH SAMPLE")
+print("=" * 80)
+
+compare.filter(
+    F.coalesce(F.col("p.HIST_REC"), F.lit("")) !=
+    F.coalesce(F.col("f.HIST_REC"), F.lit(""))
+).select(
+    "LOT",
+    "DATE_TIME",
+    "HISTORDER",
+    F.col("p.HIST_REC").alias("PROD_HIST_REC"),
+    F.col("f.HIST_REC").alias("FABRIC_HIST_REC")
+).limit(50).show(50, False)
+
+================================================================================
+ROW COUNTS
+================================================================================
+Prod Rows   : 9435
+Fabric Rows : 9435
+
+================================================================================
+PROD DISTINCT COUNTS
+================================================================================
+-RECORD 0------------
+ LOT          | 1127 
+ DATE_TIME    | 3709 
+ HISTORDER    | 140  
+ TRANS        | 48   
+ OPER         | 465  
+ MASK_LVL     | 63   
+ OPERDESC     | 159  
+ OPERLONGDESC | 563  
+ MACHINE      | 194  
+ USERNAME     | 248  
+ HIST_REC     | 1449 
+ HISTCODE     | 48   
+ COMMAND      | 22   
+ SHORTREPORT  | 2    
+ VIEWFLAG     | 2    
+ Is_Person    | 2    
+ IS_DUPLICATE | 2    
+ EMPID        | 63   
+
+
+================================================================================
+FABRIC DISTINCT COUNTS
+================================================================================
+-RECORD 0------------
+ LOT          | 1127 
+ DATE_TIME    | 3709 
+ HISTORDER    | 140  
+ TRANS        | 48   
+ OPER         | 465  
+ MASK_LVL     | 63   
+ OPERDESC     | 159  
+ OPERLONGDESC | 563  
+ MACHINE      | 194  
+ USERNAME     | 248  
+ HIST_REC     | 1449 
+ HISTCODE     | 48   
+ COMMAND      | 22   
+ SHORTREPORT  | 2    
+ VIEWFLAG     | 2    
+ Is_Person    | 2    
+ IS_DUPLICATE | 2    
+ EMPID        | 63   
+
+
+================================================================================
+FULL ROW COMPARISON
+================================================================================
+Common rows         : 9431
+Only in Prod        : 0
+Only in Fabric      : 0
+
+================================================================================
+MATCH PERCENTAGE
+================================================================================
+Prod Match % : 99.96
+
+================================================================================
+DUPLICATE ROW ANALYSIS
+================================================================================
+Prod duplicates   : 4
+Fabric duplicates : 4
+
+================================================================================
+DUPLICATE KEYS IN PROD
+================================================================================
++----------+-----------------------+---------+-----+
+|LOT       |DATE_TIME              |HISTORDER|count|
++----------+-----------------------+---------+-----+
+|6515A0T7  |2026-08-10 04:29:56.38 |1        |3    |
+|7192A1F4  |2026-08-10 04:43:36.53 |1        |3    |
+|7412A0G6  |2026-08-10 04:30:25.203|1        |2    |
+|5554A077  |2026-08-10 04:33:37.943|1        |2    |
+|5309TY165 |2026-08-10 04:49:56.153|1        |2    |
+|5703A046  |2026-08-10 04:54:12.56 |1        |2    |
+|7584A016  |2026-08-10 04:22:32.47 |1        |2    |
+|7710A047  |2026-08-10 04:22:52.81 |1        |2    |
+|7412A0B3  |2026-08-10 04:30:16.377|1        |2    |
+|7851ADB7  |2026-08-10 04:47:15.83 |1        |2    |
+|5801A009A |2026-08-10 04:24:22.69 |1        |2    |
+|7060T4L0  |2026-08-10 04:12:22.377|1        |2    |
+|6880A5Y3  |2026-08-10 04:25:06.69 |1        |2    |
+|6514A431  |2026-08-10 04:49:06.703|1        |2    |
+|7412A0B2  |2026-08-10 04:23:44.83 |1        |2    |
+|7412A0F6  |2026-08-10 04:02:40.19 |1        |2    |
+|6514A4D2  |2026-08-10 04:06:35.8  |2        |2    |
+|5539A1M6  |2026-08-10 04:28:26.337|1        |2    |
+|6053A0E5  |2026-08-10 04:32:37.313|1        |2    |
+|5012A003  |2026-08-10 04:05:24.14 |1        |2    |
+|5790A069  |2026-08-10 04:08:23.263|1        |2    |
+|5887A028  |2026-08-10 04:12:42.23 |1        |2    |
+|5245A001  |2026-08-10 04:24:46.827|1        |2    |
+|5539A1M2  |2026-08-10 04:52:08.28 |1        |2    |
+|6514A4C5  |2026-08-10 04:53:00.447|1        |2    |
+|6514A4D2  |2026-08-10 04:07:01.64 |2        |2    |
+|6880A5T6  |2026-08-10 04:15:46.77 |1        |2    |
+|6780A050  |2026-08-10 04:25:00.737|1        |2    |
+|7187T60237|2026-08-10 04:26:45.04 |1        |2    |
+|6514A3U8  |2026-08-10 04:37:39.98 |1        |2    |
+|6438T0F8  |2026-08-10 04:43:52.403|1        |2    |
+|6352ACA3  |2026-08-10 04:00:00.59 |1        |2    |
+|5620AFZ1  |2026-08-10 04:09:18.687|1        |2    |
+|6339A2P1  |2026-08-10 04:34:47.27 |1        |2    |
+|7579A1E1  |2026-08-10 04:47:28.747|1        |2    |
+|6352ACA9  |2026-08-10 04:57:08.49 |1        |2    |
+|5346A051  |2026-08-10 04:14:13.85 |1        |2    |
+|6339A2M6  |2026-08-10 04:30:29.9  |1        |2    |
+|7192A1F7  |2026-08-10 04:35:08.14 |1        |2    |
+|6053A0J3  |2026-08-10 04:26:51.447|1        |2    |
+|6514A3U8  |2026-08-10 04:19:45.693|1        |2    |
+|6514A3U8  |2026-08-10 04:19:47.347|1        |2    |
+|5630A003  |2026-08-10 04:24:58.61 |1        |2    |
+|7851ADC7  |2026-08-10 04:29:23.167|1        |2    |
+|6352AC31  |2026-08-10 04:18:08.9  |1        |2    |
+|6641AW60  |2026-08-10 04:30:04.583|1        |2    |
+|6514A4K1  |2026-08-10 04:33:55.083|1        |2    |
+|6253A247  |2026-08-10 04:33:55.327|1        |2    |
+|5639A9Y6  |2026-08-10 04:39:44.79 |1        |2    |
+|5554A089  |2026-08-10 04:49:06.037|1        |2    |
++----------+-----------------------+---------+-----+
+
+
+================================================================================
+PROD NULL PROFILE
+================================================================================
+-RECORD 0------------
+ LOT          | 0    
+ DATE_TIME    | 0    
+ HISTORDER    | 0    
+ TRANS        | 0    
+ OPER         | 0    
+ MASK_LVL     | 0    
+ OPERDESC     | 0    
+ OPERLONGDESC | 0    
+ MACHINE      | 2905 
+ USERNAME     | 0    
+ HIST_REC     | 0    
+ HISTCODE     | 0    
+ COMMAND      | 0    
+ SHORTREPORT  | 0    
+ VIEWFLAG     | 0    
+ Is_Person    | 0    
+ IS_DUPLICATE | 0    
+ EMPID        | 0    
+
+
+================================================================================
+FABRIC NULL PROFILE
+================================================================================
+-RECORD 0------------
+ LOT          | 0    
+ DATE_TIME    | 0    
+ HISTORDER    | 0    
+ TRANS        | 0    
+ OPER         | 0    
+ MASK_LVL     | 0    
+ OPERDESC     | 0    
+ OPERLONGDESC | 0    
+ MACHINE      | 2905 
+ USERNAME     | 0    
+ HIST_REC     | 0    
+ HISTCODE     | 0    
+ COMMAND      | 0    
+ SHORTREPORT  | 0    
+ VIEWFLAG     | 0    
+ Is_Person    | 0    
+ IS_DUPLICATE | 0    
+ EMPID        | 0    
+
+
+================================================================================
+DATE RANGE COMPARISON
+================================================================================
+Prod
++----------------------+----------------------+
+|MIN_DATE_TIME         |MAX_DATE_TIME         |
++----------------------+----------------------+
+|2026-08-10 04:00:00.17|2026-08-10 04:59:58.84|
++----------------------+----------------------+
+
+Fabric
++----------------------+----------------------+
+|MIN_DATE_TIME         |MAX_DATE_TIME         |
++----------------------+----------------------+
+|2026-08-10 04:00:00.17|2026-08-10 04:59:58.84|
++----------------------+----------------------+
+
+
+================================================================================
+LOTS ONLY IN PROD
+================================================================================
++---+
+|LOT|
++---+
++---+
+
+
+================================================================================
+LOTS ONLY IN FABRIC
+================================================================================
++---+
+|LOT|
++---+
++---+
+
+
+================================================================================
+KEY COMPARISON (LOT, DATE_TIME, HISTORDER)
+================================================================================
+Common Keys      : 10947
+Prod Missing     : 0
+Fabric Missing   : 0
+
+================================================================================
+DISTINCT LOTS MISSING IN FABRIC
+================================================================================
++---+
+|LOT|
++---+
++---+
+
+
+================================================================================
+DISTINCT LOTS MISSING IN PROD
+================================================================================
++---+
+|LOT|
++---+
++---+
+
+
+================================================================================
+HISTCODE COMPARISON
+================================================================================
++--------+----------+------------+----------+
+|HISTCODE|prod_count|fabric_count|difference|
++--------+----------+------------+----------+
+|AF      |3         |3           |0         |
+|AR      |243       |243         |0         |
+|AS      |7         |7           |0         |
+|CM      |3120      |3120        |0         |
+|CR      |7         |7           |0         |
+|CS      |332       |332         |0         |
+|DD      |7         |7           |0         |
+|DK      |160       |160         |0         |
+|DL      |399       |399         |0         |
+|EM      |8         |8           |0         |
+|EN      |8         |8           |0         |
+|HC      |46        |46          |0         |
+|HT      |7         |7           |0         |
+|IN      |386       |386         |0         |
+|KL      |79        |79          |0         |
+|KW      |79        |79          |0         |
+|LA      |417       |417         |0         |
+|LC      |34        |34          |0         |
+|LL      |1421      |1421        |0         |
+|MV      |412       |412         |0         |
+|OC      |3         |3           |0         |
+|OI      |342       |342         |0         |
+|OP      |2         |2           |0         |
+|OW      |7         |7           |0         |
+|PT      |101       |101         |0         |
+|R1      |1         |1           |0         |
+|R2      |1         |1           |0         |
+|RB      |2         |2           |0         |
+|RE      |7         |7           |0         |
+|RH      |2         |2           |0         |
+|RM      |4         |4           |0         |
+|RP      |23        |23          |0         |
+|RS      |227       |227         |0         |
+|RT      |86        |86          |0         |
+|RW      |1         |1           |0         |
+|SA      |1         |1           |0         |
+|SC      |2         |2           |0         |
+|SE      |34        |34          |0         |
+|SK      |38        |38          |0         |
+|SR      |406       |406         |0         |
+|TC      |1         |1           |0         |
+|TN      |7         |7           |0         |
+|TX      |510       |510         |0         |
+|UD      |80        |80          |0         |
+|UX      |8         |8           |0         |
+|VA      |7         |7           |0         |
+|WM      |350       |350         |0         |
+|WR      |7         |7           |0         |
++--------+----------+------------+----------+
+
+
+================================================================================
+OPER DISTRIBUTION
+================================================================================
++-----+----------+------------+
+|OPER |prod_count|fabric_count|
++-----+----------+------------+
+|-100 |568       |568         |
+|21070|192       |192         |
+|22188|32        |32          |
+|22236|8         |8           |
+|22632|5         |5           |
+|22741|4         |4           |
+|24320|3         |3           |
+|26620|3         |3           |
+|30165|3         |3           |
+|31106|2         |2           |
+|40200|19        |19          |
+|40203|23        |23          |
+|40206|40        |40          |
+|40207|13        |13          |
+|40208|23        |23          |
+|40211|58        |58          |
+|40213|15        |15          |
+|40214|14        |14          |
+|40216|6         |6           |
+|40217|6         |6           |
+|40248|23        |23          |
+|40301|4         |4           |
+|40303|3         |3           |
+|40305|4         |4           |
+|40306|48        |48          |
+|40307|4         |4           |
+|40308|20        |20          |
+|40310|13        |13          |
+|40311|8         |8           |
+|40313|10        |10          |
+|40314|55        |55          |
+|40316|10        |10          |
+|40317|3         |3           |
+|40318|74        |74          |
+|40321|30        |30          |
+|40322|81        |81          |
+|40323|18        |18          |
+|40324|20        |20          |
+|40325|46        |46          |
+|40327|12        |12          |
+|40334|78        |78          |
+|40349|9         |9           |
+|40351|6         |6           |
+|40352|14        |14          |
+|40353|111       |111         |
+|40354|22        |22          |
+|40355|13        |13          |
+|40357|8         |8           |
+|40358|8         |8           |
+|40359|3         |3           |
++-----+----------+------------+
+
+
+================================================================================
+EMPID DISTRIBUTION
+================================================================================
++-----+----------+------------+
+|EMPID|prod_count|fabric_count|
++-----+----------+------------+
+|SYSTM|2203      |2203        |
+|0    |2061      |2061        |
+|5881 |976       |976         |
+|99999|484       |484         |
+|5234 |413       |413         |
+|5973 |190       |190         |
+|14105|164       |164         |
+|5980 |139       |139         |
+|8198 |136       |136         |
+|5661 |127       |127         |
+|4502 |124       |124         |
+|5241 |116       |116         |
+|5736 |100       |100         |
+|5688 |99        |99          |
+|6128 |98        |98          |
+|6020 |95        |95          |
+|5840 |91        |91          |
+|5746 |87        |87          |
+|8038 |83        |83          |
+|14074|77        |77          |
+|5717 |77        |77          |
+|3879 |75        |75          |
+|14030|72        |72          |
+|5823 |72        |72          |
+|6116 |71        |71          |
+|5887 |70        |70          |
+|6134 |70        |70          |
+|14102|69        |69          |
+|14073|65        |65          |
+|5982 |65        |65          |
+|5683 |63        |63          |
+|14019|54        |54          |
+|5880 |51        |51          |
+|14038|50        |50          |
+|5532 |49        |49          |
+|14018|47        |47          |
+|5927 |44        |44          |
+|4403 |43        |43          |
+|14046|42        |42          |
+|5406 |42        |42          |
+|2895 |38        |38          |
+|8263 |37        |37          |
+|2854 |35        |35          |
+|4475 |33        |33          |
+|5889 |30        |30          |
+|5550 |29        |29          |
+|4594 |27        |27          |
+|5870 |22        |22          |
+|5338 |18        |18          |
+|5930 |15        |15          |
++-----+----------+------------+
+
+
+================================================================================
+MACHINE DISTRIBUTION
+================================================================================
++------------+----------+------------+
+|MACHINE     |prod_count|fabric_count|
++------------+----------+------------+
+|NULL        |2905      |0           |
+|NULL        |0         |2905        |
+|ALPHA307    |7         |7           |
+|ALPHA311    |21        |21          |
+|ALPHA312    |4         |4           |
+|ALPHA314    |14        |14          |
+|ALPHA804    |6         |6           |
+|ALPHA805    |6         |6           |
+|AME10       |13        |13          |
+|AME11       |10        |10          |
+|AME15       |42        |42          |
+|AME20       |15        |15          |
+|AME21       |9         |9           |
+|AME22       |11        |11          |
+|AME309      |6         |6           |
+|AME312      |15        |15          |
+|AME313      |30        |30          |
+|AME314      |15        |15          |
+|AME317      |10        |10          |
+|AME324      |11        |11          |
+|AME325      |26        |26          |
+|AME326      |19        |19          |
+|AME327      |7         |7           |
+|AME328      |24        |24          |
+|AME329      |9         |9           |
+|ASML100-301 |28        |28          |
+|ASML100-303 |4         |4           |
+|ASML100-304 |17        |17          |
+|ASML100-305 |21        |21          |
+|ASML100-308 |31        |31          |
+|ASML100-318 |15        |15          |
+|ASML100-319 |15        |15          |
+|ATLAS305    |12        |12          |
+|BAGSEALER302|12        |12          |
+|CDSEM304    |2         |2           |
+|CMP2        |6         |6           |
+|CMP4        |19        |19          |
+|CMP5        |19        |19          |
+|ECLIPSE308  |8         |8           |
+|ELIPS10     |61        |61          |
+|ELIPS311    |149       |149         |
+|ENDURA211   |23        |23          |
+|ENDURA3     |13        |13          |
+|ENDURA306   |36        |36          |
+|ENDURA307   |4         |4           |
+|ENDURA308   |47        |47          |
+|ENDURA4     |2         |2           |
+|ENDURA5     |26        |26          |
+|EPI7        |4         |4           |
+|EPI8        |7         |7           |
++------------+----------+------------+
+
+
+================================================================================
+SUMMARY METRICS
+================================================================================
+Prod Summary
++----+----+-----+-----+--------+------+
+|rows|lots|opers|users|machines|empids|
++----+----+-----+-----+--------+------+
+|9435|1127|465  |248  |194     |63    |
++----+----+-----+-----+--------+------+
+
+Fabric Summary
++----+----+-----+-----+--------+------+
+|rows|lots|opers|users|machines|empids|
++----+----+-----+-----+--------+------+
+|9435|1127|465  |248  |194     |63    |
++----+----+-----+-----+--------+------+
+
+
+================================================================================
+ATTRIBUTE MISMATCH ANALYSIS
+================================================================================
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+
+|OPER_MISMATCH|OPERDESC_MISMATCH|OPERLONGDESC_MISMATCH|TRANS_MISMATCH|HIST_REC_MISMATCH|MACHINE_MISMATCH|USERNAME_MISMATCH|COMMAND_MISMATCH|EMPID_MISMATCH|
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+
+|0            |0                |0                    |1492          |1504             |20              |20               |22              |0             |
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+
+
+
+================================================================================
+TRANS MISMATCH SAMPLE
+================================================================================
++----------+-----------------------+---------+----------+------------+
+|LOT       |DATE_TIME              |HISTORDER|PROD_TRANS|FABRIC_TRANS|
++----------+-----------------------+---------+----------+------------+
+|5245A001  |2026-08-10 04:00:00.17 |1        |WAIT MVOU |COMMENT     |
+|5245A001  |2026-08-10 04:00:00.17 |1        |COMMENT   |WAIT MVOU   |
+|6352ACB4B |2026-08-10 04:00:00.373|1        |WAIT MVOU |COMMENT     |
+|6352ACB4B |2026-08-10 04:00:00.373|1        |COMMENT   |WAIT MVOU   |
+|6352ACA3  |2026-08-10 04:00:00.59 |1        |WAIT MVOU |COMMENT     |
+|6352ACA3  |2026-08-10 04:00:00.59 |1        |COMMENT   |WAIT MVOU   |
+|7745A1F2  |2026-08-10 04:00:00.813|1        |WAIT MVOU |COMMENT     |
+|7745A1F2  |2026-08-10 04:00:00.813|1        |COMMENT   |WAIT MVOU   |
+|5773A1C6  |2026-08-10 04:00:00.89 |1        |DISPATCH  |COMMENT     |
+|5773A1C6  |2026-08-10 04:00:00.89 |1        |COMMENT   |DISPATCH    |
+|7862A072  |2026-08-10 04:00:03.213|1        |WAIT MVOU |COMMENT     |
+|7862A072  |2026-08-10 04:00:03.213|1        |COMMENT   |WAIT MVOU   |
+|5499A028  |2026-08-10 04:00:03.593|1        |WAIT MVOU |COMMENT     |
+|5499A028  |2026-08-10 04:00:03.593|1        |COMMENT   |WAIT MVOU   |
+|6352AC98  |2026-08-10 04:00:03.99 |1        |WAIT MVOU |COMMENT     |
+|6352AC98  |2026-08-10 04:00:03.99 |1        |COMMENT   |WAIT MVOU   |
+|6352AC71  |2026-08-10 04:00:04.36 |1        |WAIT MVOU |COMMENT     |
+|6352AC71  |2026-08-10 04:00:04.36 |1        |COMMENT   |WAIT MVOU   |
+|7579A1D2  |2026-08-10 04:00:05.807|1        |DISPATCH  |COMMENT     |
+|7579A1D2  |2026-08-10 04:00:05.807|1        |COMMENT   |DISPATCH    |
+|6541T14146|2026-08-10 04:00:32.26 |1        |TRANSITION|COMMENT     |
+|6541T14146|2026-08-10 04:00:32.26 |1        |COMMENT   |TRANSITION  |
+|6541T14146|2026-08-10 04:00:34.063|1        |MOVE IN   |COMMENT     |
+|6541T14146|2026-08-10 04:00:34.063|1        |COMMENT   |MOVE IN     |
+|7677A036  |2026-08-10 04:00:37.76 |1        |TRANSITION|COMMENT     |
+|7677A036  |2026-08-10 04:00:37.76 |1        |COMMENT   |TRANSITION  |
+|7677A036  |2026-08-10 04:00:38.983|1        |MOVE IN   |COMMENT     |
+|7677A036  |2026-08-10 04:00:38.983|1        |COMMENT   |MOVE IN     |
+|7738A016  |2026-08-10 04:00:52.807|1        |REPOSITION|COMMENT     |
+|7738A016  |2026-08-10 04:00:52.807|1        |COMMENT   |REPOSITION  |
+|7423A021  |2026-08-10 04:00:56.237|1        |WAIT MVOU |COMMENT     |
+|7423A021  |2026-08-10 04:00:56.237|1        |COMMENT   |WAIT MVOU   |
+|5703A044  |2026-08-10 04:01:26.59 |1        |TRANSITION|COMMENT     |
+|5703A044  |2026-08-10 04:01:26.59 |1        |COMMENT   |TRANSITION  |
+|5703A044  |2026-08-10 04:01:40.46 |1        |UNTRANSITN|COMMENT     |
+|5703A044  |2026-08-10 04:01:40.46 |1        |COMMENT   |UNTRANSITN  |
+|6541T14146|2026-08-10 04:01:46.09 |1        |TRANSITION|COMMENT     |
+|6541T14146|2026-08-10 04:01:46.09 |1        |COMMENT   |TRANSITION  |
+|6541T14146|2026-08-10 04:01:48.033|1        |MOVE IN   |COMMENT     |
+|6541T14146|2026-08-10 04:01:48.033|1        |COMMENT   |MOVE IN     |
+|6515A0S6  |2026-08-10 04:02:08.227|1        |DISPATCH  |COMMENT     |
+|6515A0S6  |2026-08-10 04:02:08.227|1        |COMMENT   |DISPATCH    |
+|5941A113  |2026-08-10 04:02:08.487|1        |DISPATCH  |COMMENT     |
+|5941A113  |2026-08-10 04:02:08.487|1        |COMMENT   |DISPATCH    |
+|7421A146  |2026-08-10 04:02:08.77 |1        |DISPATCH  |COMMENT     |
+|7421A146  |2026-08-10 04:02:08.77 |1        |COMMENT   |DISPATCH    |
+|5941A0W5  |2026-08-10 04:02:08.99 |1        |DISPATCH  |COMMENT     |
+|5941A0W5  |2026-08-10 04:02:08.99 |1        |COMMENT   |DISPATCH    |
+|6339A2L4  |2026-08-10 04:02:10.323|1        |DISPATCH  |COMMENT     |
+|6339A2L4  |2026-08-10 04:02:10.323|1        |COMMENT   |DISPATCH    |
++----------+-----------------------+---------+----------+------------+
+
+
+================================================================================
+COMMAND MISMATCH SAMPLE
+================================================================================
++--------+-----------------------+---------+------------+--------------+
+|LOT     |DATE_TIME              |HISTORDER|PROD_COMMAND|FABRIC_COMMAND|
++--------+-----------------------+---------+------------+--------------+
+|6514A4D2|2026-08-10 04:07:16.35 |1        |RPOS        |CMNT          |
+|6514A4D2|2026-08-10 04:07:16.35 |1        |CMNT        |RPOS          |
+|6514A4A6|2026-08-10 04:29:50.647|1        |LEDC        |TRAN          |
+|6514A4A6|2026-08-10 04:29:50.647|1        |TRAN        |LEDC          |
+|6514A4A6|2026-08-10 04:29:52.967|1        |LEDC        |MVIN          |
+|6514A4A6|2026-08-10 04:29:52.967|1        |MVIN        |LEDC          |
+|6515A0T7|2026-08-10 04:29:56.38 |1        |LEDC        |MVIN          |
+|6515A0T7|2026-08-10 04:29:56.38 |1        |LEDC        |MVIN          |
+|6515A0T7|2026-08-10 04:29:56.38 |1        |MVIN        |LEDC          |
+|6515A0T7|2026-08-10 04:29:56.38 |1        |MVIN        |LEDC          |
+|6802A167|2026-08-10 04:30:43.403|1        |LEDC        |TRAN          |
+|6802A167|2026-08-10 04:30:43.403|1        |TRAN        |LEDC          |
+|6389A068|2026-08-10 04:30:43.623|1        |LEDC        |TRAN          |
+|6389A068|2026-08-10 04:30:43.623|1        |TRAN        |LEDC          |
+|6802A167|2026-08-10 04:30:45.05 |1        |LEDC        |MVIN          |
+|6802A167|2026-08-10 04:30:45.05 |1        |MVIN        |LEDC          |
+|6389A068|2026-08-10 04:30:45.3  |1        |LEDC        |MVIN          |
+|6389A068|2026-08-10 04:30:45.3  |1        |MVIN        |LEDC          |
+|7192A1F4|2026-08-10 04:43:36.53 |1        |LEDC        |MVIN          |
+|7192A1F4|2026-08-10 04:43:36.53 |1        |LEDC        |MVIN          |
+|7192A1F4|2026-08-10 04:43:36.53 |1        |MVIN        |LEDC          |
+|7192A1F4|2026-08-10 04:43:36.53 |1        |MVIN        |LEDC          |
++--------+-----------------------+---------+------------+--------------+
+
+
+================================================================================
+HIST_REC MISMATCH SAMPLE
+================================================================================
++----------+-----------------------+---------+--------------------------------------+--------------------------------------+
+|LOT       |DATE_TIME              |HISTORDER|PROD_HIST_REC                         |FABRIC_HIST_REC                       |
++----------+-----------------------+---------+--------------------------------------+--------------------------------------+
+|5245A001  |2026-08-10 04:00:00.17 |1        |QTY:  6                               |Automated Move                        |
+|5245A001  |2026-08-10 04:00:00.17 |1        |Automated Move                        |QTY:  6                               |
+|6352ACB4B |2026-08-10 04:00:00.373|1        |QTY: 25                               |Automated Move                        |
+|6352ACB4B |2026-08-10 04:00:00.373|1        |Automated Move                        |QTY: 25                               |
+|6352ACA3  |2026-08-10 04:00:00.59 |1        |QTY: 25                               |Automated Move                        |
+|6352ACA3  |2026-08-10 04:00:00.59 |1        |Automated Move                        |QTY: 25                               |
+|7745A1F2  |2026-08-10 04:00:00.813|1        |QTY:  6                               |Automated Move                        |
+|7745A1F2  |2026-08-10 04:00:00.813|1        |Automated Move                        |QTY:  6                               |
+|5773A1C6  |2026-08-10 04:00:00.89 |1        |QTY: 25                               |Dispatched by Local Rules.            |
+|5773A1C6  |2026-08-10 04:00:00.89 |1        |Dispatched by Local Rules.            |QTY: 25                               |
+|7862A072  |2026-08-10 04:00:03.213|1        |QTY: 25                               |Automated Move                        |
+|7862A072  |2026-08-10 04:00:03.213|1        |Automated Move                        |QTY: 25                               |
+|5499A028  |2026-08-10 04:00:03.593|1        |QTY: 25                               |Automated Move                        |
+|5499A028  |2026-08-10 04:00:03.593|1        |Automated Move                        |QTY: 25                               |
+|6352AC98  |2026-08-10 04:00:03.99 |1        |QTY: 25                               |Automated Move                        |
+|6352AC98  |2026-08-10 04:00:03.99 |1        |Automated Move                        |QTY: 25                               |
+|6352AC71  |2026-08-10 04:00:04.36 |1        |QTY: 25                               |Automated Move                        |
+|6352AC71  |2026-08-10 04:00:04.36 |1        |Automated Move                        |QTY: 25                               |
+|7579A1D2  |2026-08-10 04:00:05.807|1        |QTY: 25                               |Dispatched by Local Rules.            |
+|7579A1D2  |2026-08-10 04:00:05.807|1        |Dispatched by Local Rules.            |QTY: 25                               |
+|6541T14146|2026-08-10 04:00:32.26 |1        |QTY:  4 TD                            |LotMoveIn Part 1                      |
+|6541T14146|2026-08-10 04:00:32.26 |1        |LotMoveIn Part 1                      |QTY:  4 TD                            |
+|6541T14146|2026-08-10 04:00:34.063|1        |QTY:  4                               |LotMoveIn Part 2                      |
+|6541T14146|2026-08-10 04:00:34.063|1        |LotMoveIn Part 2                      |QTY:  4                               |
+|7677A036  |2026-08-10 04:00:37.76 |1        |QTY: 25 TD                            |LotMoveIn Part 1                      |
+|7677A036  |2026-08-10 04:00:37.76 |1        |LotMoveIn Part 1                      |QTY: 25 TD                            |
+|7677A036  |2026-08-10 04:00:38.983|1        |QTY: 25                               |LotMoveIn Part 2                      |
+|7677A036  |2026-08-10 04:00:38.983|1        |LotMoveIn Part 2                      |QTY: 25                               |
+|7738A016  |2026-08-10 04:00:52.807|1        |QTY: 25 NEW= D :: DISPATCHED    OLD= T|program added                         |
+|7738A016  |2026-08-10 04:00:52.807|1        |program added                         |QTY: 25 NEW= D :: DISPATCHED    OLD= T|
+|7423A021  |2026-08-10 04:00:56.237|1        |QTY: 25                               |Automated Move                        |
+|7423A021  |2026-08-10 04:00:56.237|1        |Automated Move                        |QTY: 25                               |
+|5703A044  |2026-08-10 04:01:26.59 |1        |QTY: 25 TD                            |LotMoveIn Part 1                      |
+|5703A044  |2026-08-10 04:01:26.59 |1        |LotMoveIn Part 1                      |QTY: 25 TD                            |
+|5703A044  |2026-08-10 04:01:40.46 |1        | 25DT                                 |LotMoveIn Reset                       |
+|5703A044  |2026-08-10 04:01:40.46 |1        |LotMoveIn Reset                       | 25DT                                 |
+|6541T14146|2026-08-10 04:01:46.09 |1        |QTY:  4 TD                            |LotMoveIn Part 1                      |
+|6541T14146|2026-08-10 04:01:46.09 |1        |LotMoveIn Part 1                      |QTY:  4 TD                            |
+|6541T14146|2026-08-10 04:01:48.033|1        |QTY:  4                               |LotMoveIn Part 2                      |
+|6541T14146|2026-08-10 04:01:48.033|1        |LotMoveIn Part 2                      |QTY:  4                               |
+|6515A0S6  |2026-08-10 04:02:08.227|1        |QTY: 25                               |Dispatched by Local Rules.            |
+|6515A0S6  |2026-08-10 04:02:08.227|1        |Dispatched by Local Rules.            |QTY: 25                               |
+|5941A113  |2026-08-10 04:02:08.487|1        |QTY: 25                               |Dispatched by Local Rules.            |
+|5941A113  |2026-08-10 04:02:08.487|1        |Dispatched by Local Rules.            |QTY: 25                               |
+|7421A146  |2026-08-10 04:02:08.77 |1        |QTY: 25                               |Dispatched by Local Rules.            |
+|7421A146  |2026-08-10 04:02:08.77 |1        |Dispatched by Local Rules.            |QTY: 25                               |
+|5941A0W5  |2026-08-10 04:02:08.99 |1        |QTY: 25                               |Dispatched by Local Rules.            |
+|5941A0W5  |2026-08-10 04:02:08.99 |1        |Dispatched by Local Rules.            |QTY: 25                               |
+|6339A2L4  |2026-08-10 04:02:10.323|1        |QTY: 25                               |Dispatched by Local Rules.            |
+|6339A2L4  |2026-08-10 04:02:10.323|1        |Dispatched by Local Rules.            |QTY: 25                               |
++----------+-----------------------+---------+--------------------------------------+--------------------------------------+
+
+
+
+Time frame 3
+%%pyspark
+from pyspark.sql import functions as F
+
+# ============================================================
+# LOAD DATA
+# ============================================================
+
+df_Prod = spark.read.csv(
+    "abfss://9dd39a9d-2357-46a3-913d-1ff996531e62@onelake.dfs.fabric.microsoft.com/26a167a1-535e-4366-95da-c08c7730c83b/Files/v2(10thAug10.15-11)Prod.csv",
+    header=True,
+    inferSchema=True
+)
+
+df_Fabric = spark.read.csv(
+    "abfss://9dd39a9d-2357-46a3-913d-1ff996531e62@onelake.dfs.fabric.microsoft.com/26a167a1-535e-4366-95da-c08c7730c83b/Files/v2(10thAug10.15-11)Fabric.csv",
+    header=True,
+    inferSchema=True
+)
+
+print("=" * 80)
+print("ROW COUNTS")
+print("=" * 80)
+
+prod_count = df_Prod.count()
+fabric_count = df_Fabric.count()
+
+print(f"Prod Rows   : {prod_count}")
+print(f"Fabric Rows : {fabric_count}")
+
+# ============================================================
+# DISTINCT COUNT PROFILE
+# ============================================================
+
+print("\n" + "=" * 80)
+print("PROD DISTINCT COUNTS")
+print("=" * 80)
+
+df_Prod.select(
+    *[
+        F.countDistinct(c).alias(c)
+        for c in df_Prod.columns
+    ]
+).show(vertical=True, truncate=False)
+
+print("\n" + "=" * 80)
+print("FABRIC DISTINCT COUNTS")
+print("=" * 80)
+
+df_Fabric.select(
+    *[
+        F.countDistinct(c).alias(c)
+        for c in df_Fabric.columns
+    ]
+).show(vertical=True, truncate=False)
+
+# ============================================================
+# ROW COMPARISON
+# ============================================================
+
+print("\n" + "=" * 80)
+print("FULL ROW COMPARISON")
+print("=" * 80)
+
+common_rows = df_Prod.intersect(df_Fabric).count()
+
+only_prod = df_Prod.exceptAll(df_Fabric)
+only_fabric = df_Fabric.exceptAll(df_Prod)
+
+only_prod_count = only_prod.count()
+only_fabric_count = only_fabric.count()
+
+print("Common rows         :", common_rows)
+print("Only in Prod        :", only_prod_count)
+print("Only in Fabric      :", only_fabric_count)
+
+# ============================================================
+# MATCH %
+# ============================================================
+
+print("\n" + "=" * 80)
+print("MATCH PERCENTAGE")
+print("=" * 80)
+
+match_pct = round(common_rows * 100 / prod_count, 2)
+
+print(f"Prod Match % : {match_pct}")
+
+# ============================================================
+# DUPLICATE ROWS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("DUPLICATE ROW ANALYSIS")
+print("=" * 80)
+
+prod_duplicates = prod_count - df_Prod.distinct().count()
+fabric_duplicates = fabric_count - df_Fabric.distinct().count()
+
+print("Prod duplicates   :", prod_duplicates)
+print("Fabric duplicates :", fabric_duplicates)
+
+# ============================================================
+# DUPLICATED KEYS
+# ============================================================
+
+key_cols = ["LOT", "DATE_TIME", "HISTORDER"]
+
+print("\n" + "=" * 80)
+print("DUPLICATE KEYS IN PROD")
+print("=" * 80)
+
+df_Prod.groupBy(*key_cols) \
+    .count() \
+    .filter("count > 1") \
+    .orderBy(F.desc("count")) \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# NULL ANALYSIS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("PROD NULL PROFILE")
+print("=" * 80)
+
+df_Prod.select([
+    F.sum(F.col(c).isNull().cast("int")).alias(c)
+    for c in df_Prod.columns
+]).show(vertical=True)
+
+print("\n" + "=" * 80)
+print("FABRIC NULL PROFILE")
+print("=" * 80)
+
+df_Fabric.select([
+    F.sum(F.col(c).isNull().cast("int")).alias(c)
+    for c in df_Fabric.columns
+]).show(vertical=True)
+
+# ============================================================
+# DATE RANGE CHECK
+# ============================================================
+
+print("\n" + "=" * 80)
+print("DATE RANGE COMPARISON")
+print("=" * 80)
+
+print("Prod")
+df_Prod.select(
+    F.min("DATE_TIME").alias("MIN_DATE_TIME"),
+    F.max("DATE_TIME").alias("MAX_DATE_TIME")
+).show(truncate=False)
+
+print("Fabric")
+df_Fabric.select(
+    F.min("DATE_TIME").alias("MIN_DATE_TIME"),
+    F.max("DATE_TIME").alias("MAX_DATE_TIME")
+).show(truncate=False)
+
+# ============================================================
+# LOTS ONLY IN PROD
+# ============================================================
+
+print("\n" + "=" * 80)
+print("LOTS ONLY IN PROD")
+print("=" * 80)
+
+only_prod.select("LOT") \
+    .distinct() \
+    .orderBy("LOT") \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# LOTS ONLY IN FABRIC
+# ============================================================
+
+print("\n" + "=" * 80)
+print("LOTS ONLY IN FABRIC")
+print("=" * 80)
+
+only_fabric.select("LOT") \
+    .distinct() \
+    .orderBy("LOT") \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# KEY COMPARISON
+# ============================================================
+
+print("\n" + "=" * 80)
+print("KEY COMPARISON (LOT, DATE_TIME, HISTORDER)")
+print("=" * 80)
+
+common_keys = df_Prod.join(
+    df_Fabric,
+    key_cols,
+    "inner"
+)
+
+prod_missing = df_Prod.join(
+    df_Fabric,
+    key_cols,
+    "left_anti"
+)
+
+fabric_missing = df_Fabric.join(
+    df_Prod,
+    key_cols,
+    "left_anti"
+)
+
+print("Common Keys      :", common_keys.count())
+print("Prod Missing     :", prod_missing.count())
+print("Fabric Missing   :", fabric_missing.count())
+
+# ============================================================
+# DISTINCT LOT MISSING
+# ============================================================
+
+print("\n" + "=" * 80)
+print("DISTINCT LOTS MISSING IN FABRIC")
+print("=" * 80)
+
+prod_missing.select("LOT") \
+    .distinct() \
+    .orderBy("LOT") \
+    .limit(50) \
+    .show(50, False)
+
+print("\n" + "=" * 80)
+print("DISTINCT LOTS MISSING IN PROD")
+print("=" * 80)
+
+fabric_missing.select("LOT") \
+    .distinct() \
+    .orderBy("LOT") \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# HISTCODE DISTRIBUTION
+# ============================================================
+
+print("\n" + "=" * 80)
+print("HISTCODE COMPARISON")
+print("=" * 80)
+
+prod_hist = (
+    df_Prod.groupBy("HISTCODE")
+    .count()
+    .withColumnRenamed("count", "prod_count")
+)
+
+fabric_hist = (
+    df_Fabric.groupBy("HISTCODE")
+    .count()
+    .withColumnRenamed("count", "fabric_count")
+)
+
+hist_compare = (
+    prod_hist.join(
+        fabric_hist,
+        "HISTCODE",
+        "full"
+    )
+    .fillna(0)
+    .withColumn(
+        "difference",
+        F.col("fabric_count") - F.col("prod_count")
+    )
+)
+
+hist_compare.orderBy(
+    F.desc(F.abs(F.col("difference")))
+).limit(50).show(50, False)
+
+# ============================================================
+# OPER DISTRIBUTION
+# ============================================================
+
+print("\n" + "=" * 80)
+print("OPER DISTRIBUTION")
+print("=" * 80)
+
+oper_compare = (
+    df_Prod.groupBy("OPER")
+    .count()
+    .withColumnRenamed("count", "prod_count")
+    .join(
+        df_Fabric.groupBy("OPER")
+        .count()
+        .withColumnRenamed("count", "fabric_count"),
+        "OPER",
+        "full"
+    )
+    .fillna(0)
+)
+
+oper_compare.orderBy("OPER") \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# EMPID DISTRIBUTION
+# ============================================================
+
+print("\n" + "=" * 80)
+print("EMPID DISTRIBUTION")
+print("=" * 80)
+
+empid_compare = (
+    df_Prod.groupBy("EMPID")
+    .count()
+    .withColumnRenamed("count", "prod_count")
+    .join(
+        df_Fabric.groupBy("EMPID")
+        .count()
+        .withColumnRenamed("count", "fabric_count"),
+        "EMPID",
+        "full"
+    )
+    .fillna(0)
+)
+
+empid_compare.orderBy(
+    F.desc("fabric_count")
+).limit(50).show(50, False)
+
+# ============================================================
+# MACHINE DISTRIBUTION
+# ============================================================
+
+print("\n" + "=" * 80)
+print("MACHINE DISTRIBUTION")
+print("=" * 80)
+
+machine_compare = (
+    df_Prod.groupBy("MACHINE")
+    .count()
+    .withColumnRenamed("count", "prod_count")
+    .join(
+        df_Fabric.groupBy("MACHINE")
+        .count()
+        .withColumnRenamed("count", "fabric_count"),
+        "MACHINE",
+        "full"
+    )
+    .fillna(0)
+)
+
+machine_compare.orderBy("MACHINE") \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# SUMMARY METRICS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("SUMMARY METRICS")
+print("=" * 80)
+
+agg_prod = df_Prod.select(
+    F.count("*").alias("rows"),
+    F.countDistinct("LOT").alias("lots"),
+    F.countDistinct("OPER").alias("opers"),
+    F.countDistinct("USERNAME").alias("users"),
+    F.countDistinct("MACHINE").alias("machines"),
+    F.countDistinct("EMPID").alias("empids")
+)
+
+agg_fabric = df_Fabric.select(
+    F.count("*").alias("rows"),
+    F.countDistinct("LOT").alias("lots"),
+    F.countDistinct("OPER").alias("opers"),
+    F.countDistinct("USERNAME").alias("users"),
+    F.countDistinct("MACHINE").alias("machines"),
+    F.countDistinct("EMPID").alias("empids")
+)
+
+print("Prod Summary")
+agg_prod.show(truncate=False)
+
+print("Fabric Summary")
+agg_fabric.show(truncate=False)
+
+# ============================================================
+# ROW LEVEL ATTRIBUTE COMPARISON
+# ============================================================
+
+print("\n" + "=" * 80)
+print("ATTRIBUTE MISMATCH ANALYSIS")
+print("=" * 80)
+
+cols_to_compare = [
+    "OPER",
+    "OPERDESC",
+    "OPERLONGDESC",
+    "TRANS",
+    "HIST_REC",
+    "MACHINE",
+    "USERNAME",
+    "COMMAND",
+    "EMPID"
+]
+
+compare = (
+    df_Prod.alias("p")
+    .join(
+        df_Fabric.alias("f"),
+        key_cols
+    )
+)
+
+mismatch_summary = compare.agg(*[
+    F.sum(
+        F.when(
+            F.coalesce(F.col(f"p.{c}"), F.lit("")) !=
+            F.coalesce(F.col(f"f.{c}"), F.lit("")),
+            1
+        ).otherwise(0)
+    ).alias(f"{c}_MISMATCH")
+    for c in cols_to_compare
+])
+
+mismatch_summary.show(truncate=False)
+
+# ============================================================
+# TRANS MISMATCH DETAILS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("TRANS MISMATCH SAMPLE")
+print("=" * 80)
+
+compare.filter(
+    F.coalesce(F.col("p.TRANS"), F.lit("")) !=
+    F.coalesce(F.col("f.TRANS"), F.lit(""))
+).select(
+    "LOT",
+    "DATE_TIME",
+    "HISTORDER",
+    F.col("p.TRANS").alias("PROD_TRANS"),
+    F.col("f.TRANS").alias("FABRIC_TRANS")
+).limit(50).show(50, False)
+
+# ============================================================
+# COMMAND MISMATCH DETAILS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("COMMAND MISMATCH SAMPLE")
+print("=" * 80)
+
+compare.filter(
+    F.coalesce(F.col("p.COMMAND"), F.lit("")) !=
+    F.coalesce(F.col("f.COMMAND"), F.lit(""))
+).select(
+    "LOT",
+    "DATE_TIME",
+    "HISTORDER",
+    F.col("p.COMMAND").alias("PROD_COMMAND"),
+    F.col("f.COMMAND").alias("FABRIC_COMMAND")
+).limit(50).show(50, False)
+
+# ============================================================
+# HIST_REC MISMATCH DETAILS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("HIST_REC MISMATCH SAMPLE")
+print("=" * 80)
+
+compare.filter(
+    F.coalesce(F.col("p.HIST_REC"), F.lit("")) !=
+    F.coalesce(F.col("f.HIST_REC"), F.lit(""))
+).select(
+    "LOT",
+    "DATE_TIME",
+    "HISTORDER",
+    F.col("p.HIST_REC").alias("PROD_HIST_REC"),
+    F.col("f.HIST_REC").alias("FABRIC_HIST_REC")
+).limit(50).show(50, False)
+
+
+================================================================================
+ROW COUNTS
+================================================================================
+Prod Rows   : 9910
+Fabric Rows : 9910
+
+================================================================================
+PROD DISTINCT COUNTS
+================================================================================
+-RECORD 0------------
+ LOT          | 1291 
+ DATE_TIME    | 3325 
+ HISTORDER    | 198  
+ TRANS        | 51   
+ OPER         | 450  
+ MASK_LVL     | 68   
+ OPERDESC     | 151  
+ OPERLONGDESC | 541  
+ MACHINE      | 191  
+ USERNAME     | 268  
+ HIST_REC     | 1762 
+ HISTCODE     | 51   
+ COMMAND      | 25   
+ SHORTREPORT  | 2    
+ VIEWFLAG     | 2    
+ Is_Person    | 2    
+ IS_DUPLICATE | 2    
+ EMPID        | 85   
+
+
+================================================================================
+FABRIC DISTINCT COUNTS
+================================================================================
+-RECORD 0------------
+ LOT          | 1291 
+ DATE_TIME    | 3325 
+ HISTORDER    | 198  
+ TRANS        | 51   
+ OPER         | 450  
+ MASK_LVL     | 68   
+ OPERDESC     | 151  
+ OPERLONGDESC | 541  
+ MACHINE      | 191  
+ USERNAME     | 268  
+ HIST_REC     | 1762 
+ HISTCODE     | 51   
+ COMMAND      | 25   
+ SHORTREPORT  | 2    
+ VIEWFLAG     | 2    
+ Is_Person    | 2    
+ IS_DUPLICATE | 2    
+ EMPID        | 85   
+
+
+================================================================================
+FULL ROW COMPARISON
+================================================================================
+Common rows         : 9906
+Only in Prod        : 0
+Only in Fabric      : 0
+
+================================================================================
+MATCH PERCENTAGE
+================================================================================
+Prod Match % : 99.96
+
+================================================================================
+DUPLICATE ROW ANALYSIS
+================================================================================
+Prod duplicates   : 4
+Fabric duplicates : 4
+
+================================================================================
+DUPLICATE KEYS IN PROD
+================================================================================
++----------+-----------------------+---------+-----+
+|LOT       |DATE_TIME              |HISTORDER|count|
++----------+-----------------------+---------+-----+
+|6053A0G3  |2026-08-10 10:22:17.513|1        |3    |
+|7487A3A7  |2026-08-10 10:37:51.197|1        |3    |
+|6226A078  |2026-08-10 10:46:26.1  |1        |3    |
+|7851AD62  |2026-08-10 10:37:50.18 |1        |3    |
+|6734A012  |2026-08-10 10:28:07.15 |1        |2    |
+|6514A4K1  |2026-08-10 10:39:25.753|1        |2    |
+|7499A035  |2026-08-10 10:17:18.2  |1        |2    |
+|7863A019  |2026-08-10 10:59:51.193|1        |2    |
+|7328TB9799|2026-08-10 10:23:45.2  |2        |2    |
+|6352ACD5  |2026-08-10 10:29:37.763|1        |2    |
+|6514A3Q8  |2026-08-10 10:38:27.697|1        |2    |
+|5941A0R4  |2026-08-10 10:44:34.72 |1        |2    |
+|5047A055  |2026-08-10 10:49:03.8  |1        |2    |
+|6352ACB1  |2026-08-10 10:55:24.717|1        |2    |
+|7990A014  |2026-08-10 10:45:43.71 |1        |2    |
+|6621A5J9B |2026-08-10 10:21:47.52 |1        |2    |
+|7192A1G6  |2026-08-10 10:22:20.427|1        |2    |
+|7610A2C8  |2026-08-10 10:22:53.08 |1        |2    |
+|6786A1C4  |2026-08-10 10:56:43.53 |1        |2    |
+|6515A0U6  |2026-08-10 10:25:26.94 |1        |2    |
+|5502A1J5  |2026-08-10 10:34:12.9  |1        |2    |
+|7851ADB0  |2026-08-10 10:44:50.213|1        |2    |
+|5539A1N7  |2026-08-10 10:27:08.59 |1        |2    |
+|7131A050  |2026-08-10 10:31:48.357|1        |2    |
+|6389A057  |2026-08-10 10:32:57.54 |1        |2    |
+|5620AFY6  |2026-08-10 10:51:17.757|1        |2    |
+|6780A064  |2026-08-10 10:33:10.5  |1        |2    |
+|5502A1K7  |2026-08-10 10:34:13.023|1        |2    |
+|4796AP78  |2026-08-10 10:55:10.063|1        |2    |
+|6514A3E5  |2026-08-10 10:21:04.73 |1        |2    |
+|5200A3B9  |2026-08-10 10:25:14.94 |1        |2    |
+|6780A077  |2026-08-10 10:32:58.03 |1        |2    |
+|6098A0F6  |2026-08-10 10:37:38.27 |1        |2    |
+|6339A2Q2  |2026-08-10 10:21:52.28 |1        |2    |
+|5776A001  |2026-08-10 10:32:41.977|1        |2    |
+|6514A3Y2  |2026-08-10 10:39:10.72 |1        |2    |
+|5400TZZH8 |2026-08-10 10:46:18.173|1        |2    |
+|5502A1J4  |2026-08-10 10:32:37.673|1        |2    |
+|6352ACD3  |2026-08-10 10:51:52.197|1        |2    |
+|7584A022  |2026-08-10 10:46:19.237|1        |2    |
+|6514A384  |2026-08-10 10:17:57.11 |1        |2    |
+|7610A2B7  |2026-08-10 10:50:23.983|1        |2    |
+|6514A3R7  |2026-08-10 10:55:30.11 |1        |2    |
+|7868A1J9  |2026-08-10 10:22:40.8  |1        |2    |
+|5773A1C6  |2026-08-10 10:47:08.303|1        |2    |
+|7610A2H4  |2026-08-10 10:18:50.73 |1        |2    |
+|6514A3G8  |2026-08-10 10:28:25.633|1        |2    |
+|5620AFY0  |2026-08-10 10:34:13.4  |1        |2    |
+|6514A4K1  |2026-08-10 10:39:27.97 |1        |2    |
+|7584A003  |2026-08-10 10:42:10.54 |1        |2    |
++----------+-----------------------+---------+-----+
+
+
+================================================================================
+PROD NULL PROFILE
+================================================================================
+-RECORD 0------------
+ LOT          | 0    
+ DATE_TIME    | 0    
+ HISTORDER    | 0    
+ TRANS        | 0    
+ OPER         | 0    
+ MASK_LVL     | 0    
+ OPERDESC     | 0    
+ OPERLONGDESC | 0    
+ MACHINE      | 3892 
+ USERNAME     | 0    
+ HIST_REC     | 0    
+ HISTCODE     | 0    
+ COMMAND      | 0    
+ SHORTREPORT  | 0    
+ VIEWFLAG     | 0    
+ Is_Person    | 0    
+ IS_DUPLICATE | 0    
+ EMPID        | 0    
+
+
+================================================================================
+FABRIC NULL PROFILE
+================================================================================
+-RECORD 0------------
+ LOT          | 0    
+ DATE_TIME    | 0    
+ HISTORDER    | 0    
+ TRANS        | 0    
+ OPER         | 0    
+ MASK_LVL     | 0    
+ OPERDESC     | 0    
+ OPERLONGDESC | 0    
+ MACHINE      | 3892 
+ USERNAME     | 0    
+ HIST_REC     | 0    
+ HISTCODE     | 0    
+ COMMAND      | 0    
+ SHORTREPORT  | 0    
+ VIEWFLAG     | 0    
+ Is_Person    | 0    
+ IS_DUPLICATE | 0    
+ EMPID        | 0    
+
+
+================================================================================
+DATE RANGE COMPARISON
+================================================================================
+Prod
++-----------------------+----------------------+
+|MIN_DATE_TIME          |MAX_DATE_TIME         |
++-----------------------+----------------------+
+|2026-08-10 10:16:00.237|2026-08-10 10:59:59.39|
++-----------------------+----------------------+
+
+Fabric
++-----------------------+----------------------+
+|MIN_DATE_TIME          |MAX_DATE_TIME         |
++-----------------------+----------------------+
+|2026-08-10 10:16:00.237|2026-08-10 10:59:59.39|
++-----------------------+----------------------+
+
+
+================================================================================
+LOTS ONLY IN PROD
+================================================================================
++---+
+|LOT|
++---+
++---+
+
+
+================================================================================
+LOTS ONLY IN FABRIC
+================================================================================
++---+
+|LOT|
++---+
++---+
+
+
+================================================================================
+KEY COMPARISON (LOT, DATE_TIME, HISTORDER)
+================================================================================
+Common Keys      : 11126
+Prod Missing     : 0
+Fabric Missing   : 0
+
+================================================================================
+DISTINCT LOTS MISSING IN FABRIC
+================================================================================
++---+
+|LOT|
++---+
++---+
+
+
+================================================================================
+DISTINCT LOTS MISSING IN PROD
+================================================================================
++---+
+|LOT|
++---+
++---+
+
+
+================================================================================
+HISTCODE COMPARISON
+================================================================================
++--------+----------+------------+----------+
+|HISTCODE|prod_count|fabric_count|difference|
++--------+----------+------------+----------+
+|AF      |6         |6           |0         |
+|AR      |221       |221         |0         |
+|AS      |32        |32          |0         |
+|BP      |7         |7           |0         |
+|CM      |3579      |3579        |0         |
+|CR      |25        |25          |0         |
+|CS      |303       |303         |0         |
+|DD      |29        |29          |0         |
+|DK      |262       |262         |0         |
+|DL      |391       |391         |0         |
+|EM      |65        |65          |0         |
+|EN      |65        |65          |0         |
+|FG      |3         |3           |0         |
+|HC      |47        |47          |0         |
+|HT      |36        |36          |0         |
+|IN      |356       |356         |0         |
+|KL      |118       |118         |0         |
+|KW      |118       |118         |0         |
+|LA      |338       |338         |0         |
+|LC      |24        |24          |0         |
+|LL      |1332      |1332        |0         |
+|LR      |1         |1           |0         |
+|MR      |1         |1           |0         |
+|MV      |332       |332         |0         |
+|OI      |366       |366         |0         |
+|OP      |3         |3           |0         |
+|OW      |25        |25          |0         |
+|P1      |4         |4           |0         |
+|PS      |3         |3           |0         |
+|PT      |91        |91          |0         |
+|R1      |1         |1           |0         |
+|RB      |21        |21          |0         |
+|RE      |29        |29          |0         |
+|RH      |21        |21          |0         |
+|RM      |2         |2           |0         |
+|RP      |16        |16          |0         |
+|RS      |210       |210         |0         |
+|RT      |143       |143         |0         |
+|RW      |1         |1           |0         |
+|SC      |2         |2           |0         |
+|SE      |25        |25          |0         |
+|SK      |31        |31          |0         |
+|SR      |381       |381         |0         |
+|TC      |2         |2           |0         |
+|TN      |25        |25          |0         |
+|TX      |438       |438         |0         |
+|UD      |54        |54          |0         |
+|UX      |8         |8           |0         |
+|VA      |25        |25          |0         |
+|WM      |267       |267         |0         |
++--------+----------+------------+----------+
+
+
+================================================================================
+OPER DISTRIBUTION
+================================================================================
++-----+----------+------------+
+|OPER |prod_count|fabric_count|
++-----+----------+------------+
+|-100 |833       |833         |
+|20209|5         |5           |
+|21070|24        |24          |
+|22527|1         |1           |
+|22741|97        |97          |
+|24320|3         |3           |
+|26620|3         |3           |
+|30017|3         |3           |
+|40203|3         |3           |
+|40204|2         |2           |
+|40207|28        |28          |
+|40211|13        |13          |
+|40224|6         |6           |
+|40302|31        |31          |
+|40304|4         |4           |
+|40306|17        |17          |
+|40307|12        |12          |
+|40308|18        |18          |
+|40311|23        |23          |
+|40312|51        |51          |
+|40313|2         |2           |
+|40316|10        |10          |
+|40317|8         |8           |
+|40320|8         |8           |
+|40321|31        |31          |
+|40322|4         |4           |
+|40325|14        |14          |
+|40327|62        |62          |
+|40332|66        |66          |
+|40351|4         |4           |
+|40352|29        |29          |
+|40353|20        |20          |
+|40354|10        |10          |
+|40355|6         |6           |
+|40356|34        |34          |
+|40358|4         |4           |
+|40359|15        |15          |
+|40360|7         |7           |
+|40362|12        |12          |
+|40363|109       |109         |
+|40365|28        |28          |
+|40366|69        |69          |
+|40368|2         |2           |
+|40403|3         |3           |
+|40404|10        |10          |
+|40406|9         |9           |
+|40407|4         |4           |
+|40408|5         |5           |
+|40411|20        |20          |
+|40415|7         |7           |
++-----+----------+------------+
+
+
+================================================================================
+EMPID DISTRIBUTION
+================================================================================
++-----+----------+------------+
+|EMPID|prod_count|fabric_count|
++-----+----------+------------+
+|SYSTM|1918      |1918        |
+|0    |1660      |1660        |
+|5493 |1312      |1312        |
+|3414 |778       |778         |
+|99999|574       |574         |
+|5780 |560       |560         |
+|6019 |164       |164         |
+|4343 |159       |159         |
+|3734 |133       |133         |
+|14020|125       |125         |
+|4518 |123       |123         |
+|3806 |122       |122         |
+|6105 |116       |116         |
+|6137 |109       |109         |
+|14031|103       |103         |
+|4176 |100       |100         |
+|6119 |97        |97          |
+|5818 |77        |77          |
+|3955 |75        |75          |
+|5703 |73        |73          |
+|5664 |72        |72          |
+|5685 |69        |69          |
+|6118 |67        |67          |
+|5636 |66        |66          |
+|3761 |58        |58          |
+|3194 |56        |56          |
+|6062 |54        |54          |
+|5540 |53        |53          |
+|6076 |51        |51          |
+|5873 |47        |47          |
+|5246 |43        |43          |
+|5793 |43        |43          |
+|6110 |43        |43          |
+|6055 |38        |38          |
+|3702 |37        |37          |
+|3471 |36        |36          |
+|6049 |36        |36          |
+|5951 |35        |35          |
+|14088|33        |33          |
+|14023|31        |31          |
+|4984 |31        |31          |
+|5469 |31        |31          |
+|4927 |30        |30          |
+|6021 |28        |28          |
+|8369 |28        |28          |
+|5833 |27        |27          |
+|6002 |26        |26          |
+|5912 |25        |25          |
+|4282 |24        |24          |
+|5157 |24        |24          |
++-----+----------+------------+
+
+
+================================================================================
+MACHINE DISTRIBUTION
+================================================================================
++------------+----------+------------+
+|MACHINE     |prod_count|fabric_count|
++------------+----------+------------+
+|NULL        |3892      |0           |
+|NULL        |0         |3892        |
+|ALD101      |21        |21          |
+|ALPHA307    |51        |51          |
+|ALPHA308    |12        |12          |
+|ALPHA311    |28        |28          |
+|ALPHA318    |12        |12          |
+|AME10       |14        |14          |
+|AME11       |14        |14          |
+|AME15       |31        |31          |
+|AME19       |2         |2           |
+|AME20       |23        |23          |
+|AME21       |21        |21          |
+|AME22       |5         |5           |
+|AME312      |7         |7           |
+|AME313      |12        |12          |
+|AME314      |14        |14          |
+|AME317      |8         |8           |
+|AME324      |9         |9           |
+|AME325      |30        |30          |
+|AME326      |34        |34          |
+|AME327      |19        |19          |
+|AME328      |29        |29          |
+|AME329      |5         |5           |
+|ASML100-301 |29        |29          |
+|ASML100-304 |13        |13          |
+|ASML100-305 |65        |65          |
+|ASML100-308 |12        |12          |
+|ASML100-318 |17        |17          |
+|ASML100-319 |10        |10          |
+|ATLAS305    |287       |287         |
+|BAGSEALER303|55        |55          |
+|CDSEM304    |2         |2           |
+|CMP1        |13        |13          |
+|CMP2        |3         |3           |
+|CMP4        |32        |32          |
+|CMP5        |21        |21          |
+|CURE301     |14        |14          |
+|CURE302     |6         |6           |
+|ECLIPSE106  |5         |5           |
+|ECLIPSE308  |2         |2           |
+|ELIPS10     |64        |64          |
+|ELIPS311    |156       |156         |
+|ENDURA2     |6         |6           |
+|ENDURA211   |24        |24          |
+|ENDURA3     |29        |29          |
+|ENDURA306   |22        |22          |
+|ENDURA307   |4         |4           |
+|ENDURA5     |3         |3           |
+|EPI13       |3         |3           |
++------------+----------+------------+
+
+
+================================================================================
+SUMMARY METRICS
+================================================================================
+Prod Summary
++----+----+-----+-----+--------+------+
+|rows|lots|opers|users|machines|empids|
++----+----+-----+-----+--------+------+
+|9910|1291|450  |268  |191     |85    |
++----+----+-----+-----+--------+------+
+
+Fabric Summary
++----+----+-----+-----+--------+------+
+|rows|lots|opers|users|machines|empids|
++----+----+-----+-----+--------+------+
+|9910|1291|450  |268  |191     |85    |
++----+----+-----+-----+--------+------+
+
+
+================================================================================
+ATTRIBUTE MISMATCH ANALYSIS
+================================================================================
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+
+|OPER_MISMATCH|OPERDESC_MISMATCH|OPERLONGDESC_MISMATCH|TRANS_MISMATCH|HIST_REC_MISMATCH|MACHINE_MISMATCH|USERNAME_MISMATCH|COMMAND_MISMATCH|EMPID_MISMATCH|
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+
+|4            |4                |4                    |1192          |1208             |20              |16               |16              |0             |
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+
+
+
+================================================================================
+TRANS MISMATCH SAMPLE
+================================================================================
++----------+-----------------------+---------+----------+------------+
+|LOT       |DATE_TIME              |HISTORDER|PROD_TRANS|FABRIC_TRANS|
++----------+-----------------------+---------+----------+------------+
+|6339A2P0  |2026-08-10 10:16:05.65 |1        |DISPATCH  |COMMENT     |
+|6339A2P0  |2026-08-10 10:16:05.65 |1        |COMMENT   |DISPATCH    |
+|6440A8H2  |2026-08-10 10:16:18.49 |1        |TRANSITION|COMMENT     |
+|6440A8H2  |2026-08-10 10:16:18.49 |1        |COMMENT   |TRANSITION  |
+|6309A1A7  |2026-08-10 10:16:19.217|1        |DISPATCH  |COMMENT     |
+|6309A1A7  |2026-08-10 10:16:19.217|1        |COMMENT   |DISPATCH    |
+|6515A0S9  |2026-08-10 10:16:22.437|1        |DISPATCH  |COMMENT     |
+|6515A0S9  |2026-08-10 10:16:22.437|1        |COMMENT   |DISPATCH    |
+|7677A036  |2026-08-10 10:16:22.687|1        |DISPATCH  |COMMENT     |
+|7677A036  |2026-08-10 10:16:22.687|1        |COMMENT   |DISPATCH    |
+|6339A2M6  |2026-08-10 10:16:22.65 |1        |TRANSITION|COMMENT     |
+|6339A2M6  |2026-08-10 10:16:22.65 |1        |COMMENT   |TRANSITION  |
+|5041T0S9  |2026-08-10 10:16:24.91 |1        |TRANSITION|COMMENT     |
+|5041T0S9  |2026-08-10 10:16:24.91 |1        |COMMENT   |TRANSITION  |
+|7187T60238|2026-08-10 10:16:25.037|1        |WAIT MVOU |COMMENT     |
+|7187T60238|2026-08-10 10:16:25.037|1        |COMMENT   |WAIT MVOU   |
+|7745A1F2  |2026-08-10 10:16:25.643|1        |DISPATCH  |COMMENT     |
+|7745A1F2  |2026-08-10 10:16:25.643|1        |COMMENT   |DISPATCH    |
+|6352AC88  |2026-08-10 10:16:25.883|1        |DISPATCH  |COMMENT     |
+|6352AC88  |2026-08-10 10:16:25.883|1        |COMMENT   |DISPATCH    |
+|5041T0S9  |2026-08-10 10:16:26.117|1        |MOVE IN   |COMMENT     |
+|5041T0S9  |2026-08-10 10:16:26.117|1        |COMMENT   |MOVE IN     |
+|5092A023  |2026-08-10 10:16:39.513|1        |UNDISPATCH|COMMENT     |
+|5092A023  |2026-08-10 10:16:39.513|1        |COMMENT   |UNDISPATCH  |
+|5941A0P6  |2026-08-10 10:16:39.693|1        |UNDISPATCH|COMMENT     |
+|5941A0P6  |2026-08-10 10:16:39.693|1        |COMMENT   |UNDISPATCH  |
+|6053A0B8  |2026-08-10 10:16:39.737|1        |UNDISPATCH|COMMENT     |
+|6053A0B8  |2026-08-10 10:16:39.737|1        |COMMENT   |UNDISPATCH  |
+|6339A2M6  |2026-08-10 10:17:01.47 |1        |MOVE IN   |COMMENT     |
+|6339A2M6  |2026-08-10 10:17:01.47 |1        |COMMENT   |MOVE IN     |
+|7499A035  |2026-08-10 10:17:18.2  |1        |DISPATCH  |COMMENT     |
+|7499A035  |2026-08-10 10:17:18.2  |1        |COMMENT   |DISPATCH    |
+|6257A236  |2026-08-10 10:17:18.577|1        |DISPATCH  |COMMENT     |
+|6257A236  |2026-08-10 10:17:18.577|1        |COMMENT   |DISPATCH    |
+|6352ACB0  |2026-08-10 10:17:26.543|1        |DISPATCH  |COMMENT     |
+|6352ACB0  |2026-08-10 10:17:26.543|1        |COMMENT   |DISPATCH    |
+|5324A001  |2026-08-10 10:17:26.827|1        |DISPATCH  |COMMENT     |
+|5324A001  |2026-08-10 10:17:26.827|1        |COMMENT   |DISPATCH    |
+|7192A1F3  |2026-08-10 10:17:27.06 |1        |DISPATCH  |COMMENT     |
+|7192A1F3  |2026-08-10 10:17:27.06 |1        |COMMENT   |DISPATCH    |
+|7610A2L7  |2026-08-10 10:17:27.287|1        |DISPATCH  |COMMENT     |
+|7610A2L7  |2026-08-10 10:17:27.287|1        |COMMENT   |DISPATCH    |
+|5703A042  |2026-08-10 10:17:27.6  |1        |DISPATCH  |COMMENT     |
+|5703A042  |2026-08-10 10:17:27.6  |1        |COMMENT   |DISPATCH    |
+|6352AC23B |2026-08-10 10:17:47.32 |1        |TRANSITION|COMMENT     |
+|6352AC23B |2026-08-10 10:17:47.32 |1        |COMMENT   |TRANSITION  |
+|6352AC23B |2026-08-10 10:17:50.34 |1        |MOVE IN   |COMMENT     |
+|6352AC23B |2026-08-10 10:17:50.34 |1        |COMMENT   |MOVE IN     |
+|6880A5U8  |2026-08-10 10:17:52.767|1        |TRANSITION|COMMENT     |
+|6880A5U8  |2026-08-10 10:17:52.767|1        |COMMENT   |TRANSITION  |
++----------+-----------------------+---------+----------+------------+
+
+
+================================================================================
+COMMAND MISMATCH SAMPLE
+================================================================================
++--------+-----------------------+---------+------------+--------------+
+|LOT     |DATE_TIME              |HISTORDER|PROD_COMMAND|FABRIC_COMMAND|
++--------+-----------------------+---------+------------+--------------+
+|6053A0G3|2026-08-10 10:22:17.513|1        |LEDC        |MVIN          |
+|6053A0G3|2026-08-10 10:22:17.513|1        |LEDC        |MVIN          |
+|6053A0G3|2026-08-10 10:22:17.513|1        |MVIN        |LEDC          |
+|6053A0G3|2026-08-10 10:22:17.513|1        |MVIN        |LEDC          |
+|7851AD62|2026-08-10 10:37:50.18 |1        |LEDC        |MVIN          |
+|7851AD62|2026-08-10 10:37:50.18 |1        |LEDC        |MVIN          |
+|7851AD62|2026-08-10 10:37:50.18 |1        |MVIN        |LEDC          |
+|7851AD62|2026-08-10 10:37:50.18 |1        |MVIN        |LEDC          |
+|7487A3A7|2026-08-10 10:37:51.197|1        |LEDC        |MVIN          |
+|7487A3A7|2026-08-10 10:37:51.197|1        |LEDC        |MVIN          |
+|7487A3A7|2026-08-10 10:37:51.197|1        |MVIN        |LEDC          |
+|7487A3A7|2026-08-10 10:37:51.197|1        |MVIN        |LEDC          |
+|6226A078|2026-08-10 10:46:26.1  |1        |LEDC        |MVIN          |
+|6226A078|2026-08-10 10:46:26.1  |1        |LEDC        |MVIN          |
+|6226A078|2026-08-10 10:46:26.1  |1        |MVIN        |LEDC          |
+|6226A078|2026-08-10 10:46:26.1  |1        |MVIN        |LEDC          |
++--------+-----------------------+---------+------------+--------------+
+
+
+================================================================================
+HIST_REC MISMATCH SAMPLE
+================================================================================
++----------+-----------------------+---------+-------------------------------+-------------------------------+
+|LOT       |DATE_TIME              |HISTORDER|PROD_HIST_REC                  |FABRIC_HIST_REC                |
++----------+-----------------------+---------+-------------------------------+-------------------------------+
+|6339A2P0  |2026-08-10 10:16:05.65 |1        |QTY: 25                        |Dispatched by Local Rules.     |
+|6339A2P0  |2026-08-10 10:16:05.65 |1        |Dispatched by Local Rules.     |QTY: 25                        |
+|6440A8H2  |2026-08-10 10:16:18.49 |1        |QTY: 25 TD                     |LotMoveIn Part 1               |
+|6440A8H2  |2026-08-10 10:16:18.49 |1        |LotMoveIn Part 1               |QTY: 25 TD                     |
+|6309A1A7  |2026-08-10 10:16:19.217|1        |QTY: 25                        |Dispatched by Local Rules.     |
+|6309A1A7  |2026-08-10 10:16:19.217|1        |Dispatched by Local Rules.     |QTY: 25                        |
+|6515A0S9  |2026-08-10 10:16:22.437|1        |QTY: 25                        |Dispatched by Local Rules.     |
+|6515A0S9  |2026-08-10 10:16:22.437|1        |Dispatched by Local Rules.     |QTY: 25                        |
+|7677A036  |2026-08-10 10:16:22.687|1        |QTY: 25                        |Dispatched by Local Rules.     |
+|7677A036  |2026-08-10 10:16:22.687|1        |Dispatched by Local Rules.     |QTY: 25                        |
+|6339A2M6  |2026-08-10 10:16:22.65 |1        |QTY: 25 TD                     |LotMoveIn Part 1               |
+|6339A2M6  |2026-08-10 10:16:22.65 |1        |LotMoveIn Part 1               |QTY: 25 TD                     |
+|5041T0S9  |2026-08-10 10:16:24.91 |1        |QTY:  1 TD                     |LotMoveIn Part 1               |
+|5041T0S9  |2026-08-10 10:16:24.91 |1        |LotMoveIn Part 1               |QTY:  1 TD                     |
+|7187T60238|2026-08-10 10:16:25.037|1        |QTY: 25                        |Automated Move                 |
+|7187T60238|2026-08-10 10:16:25.037|1        |Automated Move                 |QTY: 25                        |
+|7745A1F2  |2026-08-10 10:16:25.643|1        |QTY:  6                        |Dispatched by Local Rules.     |
+|7745A1F2  |2026-08-10 10:16:25.643|1        |Dispatched by Local Rules.     |QTY:  6                        |
+|6352AC88  |2026-08-10 10:16:25.883|1        |QTY: 25                        |Dispatched by Local Rules.     |
+|6352AC88  |2026-08-10 10:16:25.883|1        |Dispatched by Local Rules.     |QTY: 25                        |
+|5041T0S9  |2026-08-10 10:16:26.117|1        |QTY:  1                        |LotMoveIn Part 2               |
+|5041T0S9  |2026-08-10 10:16:26.117|1        |LotMoveIn Part 2               |QTY:  1                        |
+|5092A023  |2026-08-10 10:16:39.513|1        | NEW= Q :: IN QUEUE      OLD= D|UnDispatch (BLMWEB03V)         |
+|5092A023  |2026-08-10 10:16:39.513|1        |UnDispatch (BLMWEB03V)         | NEW= Q :: IN QUEUE      OLD= D|
+|5941A0P6  |2026-08-10 10:16:39.693|1        | NEW= Q :: IN QUEUE      OLD= D|UnDispatch (BLMWEB03V)         |
+|5941A0P6  |2026-08-10 10:16:39.693|1        |UnDispatch (BLMWEB03V)         | NEW= Q :: IN QUEUE      OLD= D|
+|6053A0B8  |2026-08-10 10:16:39.737|1        | NEW= Q :: IN QUEUE      OLD= D|UnDispatch (BLMWEB03V)         |
+|6053A0B8  |2026-08-10 10:16:39.737|1        |UnDispatch (BLMWEB03V)         | NEW= Q :: IN QUEUE      OLD= D|
+|6352ACB9  |2026-08-10 10:16:52.41 |1        |Lot Tracker - Prompt           |Located on Shelf 3606-D in WIP |
+|6352ACB9  |2026-08-10 10:16:52.41 |1        |Located on Shelf 3606-D in WIP |Lot Tracker - Prompt           |
+|6339A2M6  |2026-08-10 10:17:01.47 |1        |QTY: 25                        |LotMoveIn Part 2               |
+|6339A2M6  |2026-08-10 10:17:01.47 |1        |LotMoveIn Part 2               |QTY: 25                        |
+|7499A035  |2026-08-10 10:17:18.2  |1        |QTY: 25                        |Dispatched by Local Rules.     |
+|7499A035  |2026-08-10 10:17:18.2  |1        |Dispatched by Local Rules.     |QTY: 25                        |
+|6257A236  |2026-08-10 10:17:18.577|1        |QTY: 25                        |Dispatched by Local Rules.     |
+|6257A236  |2026-08-10 10:17:18.577|1        |Dispatched by Local Rules.     |QTY: 25                        |
+|6352ACB0  |2026-08-10 10:17:26.543|1        |QTY: 25                        |Dispatched by Local Rules.     |
+|6352ACB0  |2026-08-10 10:17:26.543|1        |Dispatched by Local Rules.     |QTY: 25                        |
+|5324A001  |2026-08-10 10:17:26.827|1        |QTY: 12                        |Dispatched by Local Rules.     |
+|5324A001  |2026-08-10 10:17:26.827|1        |Dispatched by Local Rules.     |QTY: 12                        |
+|7192A1F3  |2026-08-10 10:17:27.06 |1        |QTY: 25                        |Dispatched by Local Rules.     |
+|7192A1F3  |2026-08-10 10:17:27.06 |1        |Dispatched by Local Rules.     |QTY: 25                        |
+|7610A2L7  |2026-08-10 10:17:27.287|1        |QTY: 25                        |Dispatched by Local Rules.     |
+|7610A2L7  |2026-08-10 10:17:27.287|1        |Dispatched by Local Rules.     |QTY: 25                        |
+|5703A042  |2026-08-10 10:17:27.6  |1        |QTY: 25                        |Dispatched by Local Rules.     |
+|5703A042  |2026-08-10 10:17:27.6  |1        |Dispatched by Local Rules.     |QTY: 25                        |
+|6352AC23B |2026-08-10 10:17:47.32 |1        |QTY: 25 TD                     |LotMoveIn Part 1               |
+|6352AC23B |2026-08-10 10:17:47.32 |1        |LotMoveIn Part 1               |QTY: 25 TD                     |
+|6352AC23B |2026-08-10 10:17:50.34 |1        |QTY: 25                        |LotMoveIn Part 2               |
+|6352AC23B |2026-08-10 10:17:50.34 |1        |LotMoveIn Part 2               |QTY: 25                        |
++----------+-----------------------+---------+-------------------------------+-------------------------------+
+
+
+Time frame 4
+
+%%pyspark
+from pyspark.sql import functions as F
+
+# ============================================================
+# LOAD DATA
+# ============================================================
+
+df_Prod = spark.read.csv(
+    "abfss://9dd39a9d-2357-46a3-913d-1ff996531e62@onelake.dfs.fabric.microsoft.com/26a167a1-535e-4366-95da-c08c7730c83b/Files/v2(11thAug14-15)Prod.csv",
+    header=True,
+    inferSchema=True
+)
+
+df_Fabric = spark.read.csv(
+    "abfss://9dd39a9d-2357-46a3-913d-1ff996531e62@onelake.dfs.fabric.microsoft.com/26a167a1-535e-4366-95da-c08c7730c83b/Files/v2(11thAug14-15)Fabric.csv",
+    header=True,
+    inferSchema=True
+)
+
+print("=" * 80)
+print("ROW COUNTS")
+print("=" * 80)
+
+prod_count = df_Prod.count()
+fabric_count = df_Fabric.count()
+
+print(f"Prod Rows   : {prod_count}")
+print(f"Fabric Rows : {fabric_count}")
+
+# ============================================================
+# DISTINCT COUNT PROFILE
+# ============================================================
+
+print("\n" + "=" * 80)
+print("PROD DISTINCT COUNTS")
+print("=" * 80)
+
+df_Prod.select(
+    *[
+        F.countDistinct(c).alias(c)
+        for c in df_Prod.columns
+    ]
+).show(vertical=True, truncate=False)
+
+print("\n" + "=" * 80)
+print("FABRIC DISTINCT COUNTS")
+print("=" * 80)
+
+df_Fabric.select(
+    *[
+        F.countDistinct(c).alias(c)
+        for c in df_Fabric.columns
+    ]
+).show(vertical=True, truncate=False)
+
+# ============================================================
+# ROW COMPARISON
+# ============================================================
+
+print("\n" + "=" * 80)
+print("FULL ROW COMPARISON")
+print("=" * 80)
+
+common_rows = df_Prod.intersect(df_Fabric).count()
+
+only_prod = df_Prod.exceptAll(df_Fabric)
+only_fabric = df_Fabric.exceptAll(df_Prod)
+
+only_prod_count = only_prod.count()
+only_fabric_count = only_fabric.count()
+
+print("Common rows         :", common_rows)
+print("Only in Prod        :", only_prod_count)
+print("Only in Fabric      :", only_fabric_count)
+
+# ============================================================
+# MATCH %
+# ============================================================
+
+print("\n" + "=" * 80)
+print("MATCH PERCENTAGE")
+print("=" * 80)
+
+match_pct = round(common_rows * 100 / prod_count, 2)
+
+print(f"Prod Match % : {match_pct}")
+
+# ============================================================
+# DUPLICATE ROWS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("DUPLICATE ROW ANALYSIS")
+print("=" * 80)
+
+prod_duplicates = prod_count - df_Prod.distinct().count()
+fabric_duplicates = fabric_count - df_Fabric.distinct().count()
+
+print("Prod duplicates   :", prod_duplicates)
+print("Fabric duplicates :", fabric_duplicates)
+
+# ============================================================
+# DUPLICATED KEYS
+# ============================================================
+
+key_cols = ["LOT", "DATE_TIME", "HISTORDER"]
+
+print("\n" + "=" * 80)
+print("DUPLICATE KEYS IN PROD")
+print("=" * 80)
+
+df_Prod.groupBy(*key_cols) \
+    .count() \
+    .filter("count > 1") \
+    .orderBy(F.desc("count")) \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# NULL ANALYSIS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("PROD NULL PROFILE")
+print("=" * 80)
+
+df_Prod.select([
+    F.sum(F.col(c).isNull().cast("int")).alias(c)
+    for c in df_Prod.columns
+]).show(vertical=True)
+
+print("\n" + "=" * 80)
+print("FABRIC NULL PROFILE")
+print("=" * 80)
+
+df_Fabric.select([
+    F.sum(F.col(c).isNull().cast("int")).alias(c)
+    for c in df_Fabric.columns
+]).show(vertical=True)
+
+# ============================================================
+# DATE RANGE CHECK
+# ============================================================
+
+print("\n" + "=" * 80)
+print("DATE RANGE COMPARISON")
+print("=" * 80)
+
+print("Prod")
+df_Prod.select(
+    F.min("DATE_TIME").alias("MIN_DATE_TIME"),
+    F.max("DATE_TIME").alias("MAX_DATE_TIME")
+).show(truncate=False)
+
+print("Fabric")
+df_Fabric.select(
+    F.min("DATE_TIME").alias("MIN_DATE_TIME"),
+    F.max("DATE_TIME").alias("MAX_DATE_TIME")
+).show(truncate=False)
+
+# ============================================================
+# LOTS ONLY IN PROD
+# ============================================================
+
+print("\n" + "=" * 80)
+print("LOTS ONLY IN PROD")
+print("=" * 80)
+
+only_prod.select("LOT") \
+    .distinct() \
+    .orderBy("LOT") \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# LOTS ONLY IN FABRIC
+# ============================================================
+
+print("\n" + "=" * 80)
+print("LOTS ONLY IN FABRIC")
+print("=" * 80)
+
+only_fabric.select("LOT") \
+    .distinct() \
+    .orderBy("LOT") \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# KEY COMPARISON
+# ============================================================
+
+print("\n" + "=" * 80)
+print("KEY COMPARISON (LOT, DATE_TIME, HISTORDER)")
+print("=" * 80)
+
+common_keys = df_Prod.join(
+    df_Fabric,
+    key_cols,
+    "inner"
+)
+
+prod_missing = df_Prod.join(
+    df_Fabric,
+    key_cols,
+    "left_anti"
+)
+
+fabric_missing = df_Fabric.join(
+    df_Prod,
+    key_cols,
+    "left_anti"
+)
+
+print("Common Keys      :", common_keys.count())
+print("Prod Missing     :", prod_missing.count())
+print("Fabric Missing   :", fabric_missing.count())
+
+# ============================================================
+# DISTINCT LOT MISSING
+# ============================================================
+
+print("\n" + "=" * 80)
+print("DISTINCT LOTS MISSING IN FABRIC")
+print("=" * 80)
+
+prod_missing.select("LOT") \
+    .distinct() \
+    .orderBy("LOT") \
+    .limit(50) \
+    .show(50, False)
+
+print("\n" + "=" * 80)
+print("DISTINCT LOTS MISSING IN PROD")
+print("=" * 80)
+
+fabric_missing.select("LOT") \
+    .distinct() \
+    .orderBy("LOT") \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# HISTCODE DISTRIBUTION
+# ============================================================
+
+print("\n" + "=" * 80)
+print("HISTCODE COMPARISON")
+print("=" * 80)
+
+prod_hist = (
+    df_Prod.groupBy("HISTCODE")
+    .count()
+    .withColumnRenamed("count", "prod_count")
+)
+
+fabric_hist = (
+    df_Fabric.groupBy("HISTCODE")
+    .count()
+    .withColumnRenamed("count", "fabric_count")
+)
+
+hist_compare = (
+    prod_hist.join(
+        fabric_hist,
+        "HISTCODE",
+        "full"
+    )
+    .fillna(0)
+    .withColumn(
+        "difference",
+        F.col("fabric_count") - F.col("prod_count")
+    )
+)
+
+hist_compare.orderBy(
+    F.desc(F.abs(F.col("difference")))
+).limit(50).show(50, False)
+
+# ============================================================
+# OPER DISTRIBUTION
+# ============================================================
+
+print("\n" + "=" * 80)
+print("OPER DISTRIBUTION")
+print("=" * 80)
+
+oper_compare = (
+    df_Prod.groupBy("OPER")
+    .count()
+    .withColumnRenamed("count", "prod_count")
+    .join(
+        df_Fabric.groupBy("OPER")
+        .count()
+        .withColumnRenamed("count", "fabric_count"),
+        "OPER",
+        "full"
+    )
+    .fillna(0)
+)
+
+oper_compare.orderBy("OPER") \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# EMPID DISTRIBUTION
+# ============================================================
+
+print("\n" + "=" * 80)
+print("EMPID DISTRIBUTION")
+print("=" * 80)
+
+empid_compare = (
+    df_Prod.groupBy("EMPID")
+    .count()
+    .withColumnRenamed("count", "prod_count")
+    .join(
+        df_Fabric.groupBy("EMPID")
+        .count()
+        .withColumnRenamed("count", "fabric_count"),
+        "EMPID",
+        "full"
+    )
+    .fillna(0)
+)
+
+empid_compare.orderBy(
+    F.desc("fabric_count")
+).limit(50).show(50, False)
+
+# ============================================================
+# MACHINE DISTRIBUTION
+# ============================================================
+
+print("\n" + "=" * 80)
+print("MACHINE DISTRIBUTION")
+print("=" * 80)
+
+machine_compare = (
+    df_Prod.groupBy("MACHINE")
+    .count()
+    .withColumnRenamed("count", "prod_count")
+    .join(
+        df_Fabric.groupBy("MACHINE")
+        .count()
+        .withColumnRenamed("count", "fabric_count"),
+        "MACHINE",
+        "full"
+    )
+    .fillna(0)
+)
+
+machine_compare.orderBy("MACHINE") \
+    .limit(50) \
+    .show(50, False)
+
+# ============================================================
+# SUMMARY METRICS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("SUMMARY METRICS")
+print("=" * 80)
+
+agg_prod = df_Prod.select(
+    F.count("*").alias("rows"),
+    F.countDistinct("LOT").alias("lots"),
+    F.countDistinct("OPER").alias("opers"),
+    F.countDistinct("USERNAME").alias("users"),
+    F.countDistinct("MACHINE").alias("machines"),
+    F.countDistinct("EMPID").alias("empids")
+)
+
+agg_fabric = df_Fabric.select(
+    F.count("*").alias("rows"),
+    F.countDistinct("LOT").alias("lots"),
+    F.countDistinct("OPER").alias("opers"),
+    F.countDistinct("USERNAME").alias("users"),
+    F.countDistinct("MACHINE").alias("machines"),
+    F.countDistinct("EMPID").alias("empids")
+)
+
+print("Prod Summary")
+agg_prod.show(truncate=False)
+
+print("Fabric Summary")
+agg_fabric.show(truncate=False)
+
+# ============================================================
+# ROW LEVEL ATTRIBUTE COMPARISON
+# ============================================================
+
+print("\n" + "=" * 80)
+print("ATTRIBUTE MISMATCH ANALYSIS")
+print("=" * 80)
+
+cols_to_compare = [
+    "OPER",
+    "OPERDESC",
+    "OPERLONGDESC",
+    "TRANS",
+    "HIST_REC",
+    "MACHINE",
+    "USERNAME",
+    "COMMAND",
+    "EMPID"
+]
+
+compare = (
+    df_Prod.alias("p")
+    .join(
+        df_Fabric.alias("f"),
+        key_cols
+    )
+)
+
+mismatch_summary = compare.agg(*[
+    F.sum(
+        F.when(
+            F.coalesce(F.col(f"p.{c}"), F.lit("")) !=
+            F.coalesce(F.col(f"f.{c}"), F.lit("")),
+            1
+        ).otherwise(0)
+    ).alias(f"{c}_MISMATCH")
+    for c in cols_to_compare
+])
+
+mismatch_summary.show(truncate=False)
+
+# ============================================================
+# TRANS MISMATCH DETAILS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("TRANS MISMATCH SAMPLE")
+print("=" * 80)
+
+compare.filter(
+    F.coalesce(F.col("p.TRANS"), F.lit("")) !=
+    F.coalesce(F.col("f.TRANS"), F.lit(""))
+).select(
+    "LOT",
+    "DATE_TIME",
+    "HISTORDER",
+    F.col("p.TRANS").alias("PROD_TRANS"),
+    F.col("f.TRANS").alias("FABRIC_TRANS")
+).limit(50).show(50, False)
+
+# ============================================================
+# COMMAND MISMATCH DETAILS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("COMMAND MISMATCH SAMPLE")
+print("=" * 80)
+
+compare.filter(
+    F.coalesce(F.col("p.COMMAND"), F.lit("")) !=
+    F.coalesce(F.col("f.COMMAND"), F.lit(""))
+).select(
+    "LOT",
+    "DATE_TIME",
+    "HISTORDER",
+    F.col("p.COMMAND").alias("PROD_COMMAND"),
+    F.col("f.COMMAND").alias("FABRIC_COMMAND")
+).limit(50).show(50, False)
+
+# ============================================================
+# HIST_REC MISMATCH DETAILS
+# ============================================================
+
+print("\n" + "=" * 80)
+print("HIST_REC MISMATCH SAMPLE")
+print("=" * 80)
+
+compare.filter(
+    F.coalesce(F.col("p.HIST_REC"), F.lit("")) !=
+    F.coalesce(F.col("f.HIST_REC"), F.lit(""))
+).select(
+    "LOT",
+    "DATE_TIME",
+    "HISTORDER",
+    F.col("p.HIST_REC").alias("PROD_HIST_REC"),
+    F.col("f.HIST_REC").alias("FABRIC_HIST_REC")
+).limit(50).show(50, False)
+
+
+================================================================================
+ROW COUNTS
+================================================================================
+Prod Rows   : 9923
+Fabric Rows : 9923
+
+================================================================================
+PROD DISTINCT COUNTS
+================================================================================
+-RECORD 0------------
+ LOT          | 1259 
+ DATE_TIME    | 3091 
+ HISTORDER    | 231  
+ TRANS        | 50   
+ OPER         | 460  
+ MASK_LVL     | 64   
+ OPERDESC     | 155  
+ OPERLONGDESC | 543  
+ MACHINE      | 190  
+ USERNAME     | 235  
+ HIST_REC     | 1817 
+ HISTCODE     | 50   
+ COMMAND      | 20   
+ SHORTREPORT  | 2    
+ VIEWFLAG     | 2    
+ Is_Person    | 2    
+ IS_DUPLICATE | 2    
+ EMPID        | 76   
+
+
+================================================================================
+FABRIC DISTINCT COUNTS
+================================================================================
+-RECORD 0------------
+ LOT          | 1259 
+ DATE_TIME    | 3091 
+ HISTORDER    | 231  
+ TRANS        | 50   
+ OPER         | 460  
+ MASK_LVL     | 64   
+ OPERDESC     | 155  
+ OPERLONGDESC | 543  
+ MACHINE      | 190  
+ USERNAME     | 235  
+ HIST_REC     | 1817 
+ HISTCODE     | 50   
+ COMMAND      | 20   
+ SHORTREPORT  | 2    
+ VIEWFLAG     | 2    
+ Is_Person    | 2    
+ IS_DUPLICATE | 2    
+ EMPID        | 76   
+
+
+================================================================================
+FULL ROW COMPARISON
+================================================================================
+Common rows         : 9923
+Only in Prod        : 0
+Only in Fabric      : 0
+
+================================================================================
+MATCH PERCENTAGE
+================================================================================
+Prod Match % : 100.0
+
+================================================================================
+DUPLICATE ROW ANALYSIS
+================================================================================
+Prod duplicates   : 0
+Fabric duplicates : 0
+
+================================================================================
+DUPLICATE KEYS IN PROD
+================================================================================
++---------+-----------------------+---------+-----+
+|LOT      |DATE_TIME              |HISTORDER|count|
++---------+-----------------------+---------+-----+
+|6794A014A|2026-08-11 14:19:23.71 |15       |10   |
+|6794A015 |2026-08-11 14:31:02.82 |15       |10   |
+|6794A014 |2026-08-11 14:19:23.71 |15       |10   |
+|7225ABU5 |2026-08-11 14:15:39.15 |1        |2    |
+|6053A0G3 |2026-08-11 14:19:11.4  |1        |2    |
+|7851ADA7 |2026-08-11 14:26:05.627|1        |2    |
+|7131A044 |2026-08-11 14:18:44.063|1        |2    |
+|6814A042 |2026-08-11 14:51:57.733|1        |2    |
+|5753A1B7 |2026-08-11 14:18:15.94 |1        |2    |
+|5502A1L5 |2026-08-11 14:40:11.027|1        |2    |
+|6500A263 |2026-08-11 14:22:11.303|1        |2    |
+|6782A001 |2026-08-11 14:36:30.133|1        |2    |
+|7738A007 |2026-08-11 14:38:20.047|1        |2    |
+|7039A010 |2026-08-11 14:45:57.33 |1        |2    |
+|7610A2M3 |2026-08-11 14:54:20.5  |1        |2    |
+|7610A2F3 |2026-08-11 14:33:01.237|1        |2    |
+|7610A2M4 |2026-08-11 14:34:35.43 |1        |2    |
+|7412A0A5 |2026-08-11 14:36:52.743|1        |2    |
+|6514A4D2 |2026-08-11 14:39:50.26 |1        |2    |
+|7862A027 |2026-08-11 14:18:06.243|1        |2    |
+|5753A1B6 |2026-08-11 14:35:42.77 |1        |2    |
+|6514A4D2 |2026-08-11 14:39:55.42 |1        |2    |
+|6935A1C5 |2026-08-11 14:51:03.78 |1        |2    |
+|5459A257 |2026-08-11 14:58:35.323|1        |2    |
+|7963A0Q0 |2026-08-11 14:59:22.03 |1        |2    |
+|5773A1A2 |2026-08-11 14:36:33.677|1        |2    |
+|6352ACB5 |2026-08-11 14:40:52.59 |1        |2    |
+|6514A4F8 |2026-08-11 14:45:36.903|1        |2    |
+|5941A0G4 |2026-08-11 14:51:49.333|1        |2    |
+|7990A015 |2026-08-11 14:21:28.053|1        |2    |
+|7624T463 |2026-08-11 14:24:41.777|1        |2    |
+|7851ADA9 |2026-08-11 14:45:14.203|1        |2    |
+|6814A053 |2026-08-11 14:33:16.997|1        |2    |
+|6053A0A6A|2026-08-11 14:33:44.62 |1        |2    |
+|5605A061 |2026-08-11 14:19:09.98 |1        |2    |
+|5773A1C7 |2026-08-11 14:23:17.73 |1        |2    |
+|4562AZA7 |2026-08-11 14:31:50.653|1        |2    |
+|6053A0J3 |2026-08-11 14:39:50.857|1        |2    |
+|6514A4D2 |2026-08-11 14:44:56.887|1        |2    |
+|6098A0B8 |2026-08-11 14:18:13.073|1        |2    |
+|6411TL01 |2026-08-11 14:56:26.033|1        |2    |
+|7417A003A|2026-08-11 14:36:08.1  |1        |2    |
+|5941A0G4 |2026-08-11 14:29:33.527|1        |2    |
+|5539A1Q1 |2026-08-11 14:35:17.933|1        |2    |
+|6198A045 |2026-08-11 14:44:04.17 |1        |2    |
+|5539A1K9 |2026-08-11 14:22:23.16 |1        |2    |
+|6352AC67 |2026-08-11 14:53:40.397|1        |2    |
+|6514A4L9 |2026-08-11 14:44:23.723|1        |2    |
+|6514A4G6 |2026-08-11 14:30:51.03 |1        |2    |
+|6053A0F9 |2026-08-11 14:19:37.247|1        |2    |
++---------+-----------------------+---------+-----+
+
+
+================================================================================
+PROD NULL PROFILE
+================================================================================
+-RECORD 0------------
+ LOT          | 0    
+ DATE_TIME    | 0    
+ HISTORDER    | 0    
+ TRANS        | 0    
+ OPER         | 0    
+ MASK_LVL     | 0    
+ OPERDESC     | 0    
+ OPERLONGDESC | 0    
+ MACHINE      | 4286 
+ USERNAME     | 0    
+ HIST_REC     | 0    
+ HISTCODE     | 0    
+ COMMAND      | 0    
+ SHORTREPORT  | 0    
+ VIEWFLAG     | 0    
+ Is_Person    | 0    
+ IS_DUPLICATE | 0    
+ EMPID        | 0    
+
+
+================================================================================
+FABRIC NULL PROFILE
+================================================================================
+-RECORD 0------------
+ LOT          | 0    
+ DATE_TIME    | 0    
+ HISTORDER    | 0    
+ TRANS        | 0    
+ OPER         | 0    
+ MASK_LVL     | 0    
+ OPERDESC     | 0    
+ OPERLONGDESC | 0    
+ MACHINE      | 4286 
+ USERNAME     | 0    
+ HIST_REC     | 0    
+ HISTCODE     | 0    
+ COMMAND      | 0    
+ SHORTREPORT  | 0    
+ VIEWFLAG     | 0    
+ Is_Person    | 0    
+ IS_DUPLICATE | 0    
+ EMPID        | 0    
+
+
+================================================================================
+DATE RANGE COMPARISON
+================================================================================
+Prod
++----------------------+-----------------------+
+|MIN_DATE_TIME         |MAX_DATE_TIME          |
++----------------------+-----------------------+
+|2026-08-11 14:15:00.61|2026-08-11 14:59:58.997|
++----------------------+-----------------------+
+
+Fabric
++----------------------+-----------------------+
+|MIN_DATE_TIME         |MAX_DATE_TIME          |
++----------------------+-----------------------+
+|2026-08-11 14:15:00.61|2026-08-11 14:59:58.997|
++----------------------+-----------------------+
+
+
+================================================================================
+LOTS ONLY IN PROD
+================================================================================
++---+
+|LOT|
++---+
++---+
+
+
+================================================================================
+LOTS ONLY IN FABRIC
+================================================================================
++---+
+|LOT|
++---+
++---+
+
+
+================================================================================
+KEY COMPARISON (LOT, DATE_TIME, HISTORDER)
+================================================================================
+Common Keys      : 11343
+Prod Missing     : 0
+Fabric Missing   : 0
+
+================================================================================
+DISTINCT LOTS MISSING IN FABRIC
+================================================================================
++---+
+|LOT|
++---+
++---+
+
+
+================================================================================
+DISTINCT LOTS MISSING IN PROD
+================================================================================
++---+
+|LOT|
++---+
++---+
+
+
+================================================================================
+HISTCODE COMPARISON
+================================================================================
++--------+----------+------------+----------+
+|HISTCODE|prod_count|fabric_count|difference|
++--------+----------+------------+----------+
+|AA      |3         |3           |0         |
+|AR      |218       |218         |0         |
+|AS      |30        |30          |0         |
+|CM      |3600      |3600        |0         |
+|CR      |24        |24          |0         |
+|CS      |293       |293         |0         |
+|DD      |21        |21          |0         |
+|DK      |214       |214         |0         |
+|DL      |394       |394         |0         |
+|EM      |94        |94          |0         |
+|EN      |94        |94          |0         |
+|HC      |50        |50          |0         |
+|HT      |24        |24          |0         |
+|IN      |359       |359         |0         |
+|KL      |176       |176         |0         |
+|KW      |176       |176         |0         |
+|LA      |353       |353         |0         |
+|LB      |9         |9           |0         |
+|LC      |19        |19          |0         |
+|LL      |1137      |1137        |0         |
+|MR      |27        |27          |0         |
+|MV      |352       |352         |0         |
+|OC      |1         |1           |0         |
+|OI      |408       |408         |0         |
+|OP      |5         |5           |0         |
+|OW      |24        |24          |0         |
+|PS      |13        |13          |0         |
+|PT      |34        |34          |0         |
+|R1      |1         |1           |0         |
+|RA      |1         |1           |0         |
+|RB      |17        |17          |0         |
+|RE      |24        |24          |0         |
+|RH      |17        |17          |0         |
+|RM      |1         |1           |0         |
+|RP      |28        |28          |0         |
+|RS      |185       |185         |0         |
+|RT      |200       |200         |0         |
+|RW      |1         |1           |0         |
+|SE      |29        |29          |0         |
+|SK      |29        |29          |0         |
+|SO      |3         |3           |0         |
+|SR      |383       |383         |0         |
+|TN      |24        |24          |0         |
+|TX      |449       |449         |0         |
+|UD      |54        |54          |0         |
+|UX      |3         |3           |0         |
+|VA      |24        |24          |0         |
+|WF      |3         |3           |0         |
+|WM      |274       |274         |0         |
+|WR      |21        |21          |0         |
++--------+----------+------------+----------+
+
+
+================================================================================
+OPER DISTRIBUTION
+================================================================================
++-----+----------+------------+
+|OPER |prod_count|fabric_count|
++-----+----------+------------+
+|-100 |1100      |1100        |
+|20002|5         |5           |
+|20099|78        |78          |
+|21069|9         |9           |
+|21070|19        |19          |
+|22188|6         |6           |
+|22741|95        |95          |
+|24320|4         |4           |
+|25130|11        |11          |
+|25144|7         |7           |
+|27544|10        |10          |
+|40200|31        |31          |
+|40203|2         |2           |
+|40204|8         |8           |
+|40205|4         |4           |
+|40206|6         |6           |
+|40207|19        |19          |
+|40209|19        |19          |
+|40210|4         |4           |
+|40211|20        |20          |
+|40213|25        |25          |
+|40214|12        |12          |
+|40216|6         |6           |
+|40218|8         |8           |
+|40220|10        |10          |
+|40221|1         |1           |
+|40224|15        |15          |
+|40300|1         |1           |
+|40302|10        |10          |
+|40303|11        |11          |
+|40304|12        |12          |
+|40305|6         |6           |
+|40306|13        |13          |
+|40307|14        |14          |
+|40309|3         |3           |
+|40310|5         |5           |
+|40311|8         |8           |
+|40312|12        |12          |
+|40313|15        |15          |
+|40316|16        |16          |
+|40320|12        |12          |
+|40321|3         |3           |
+|40323|13        |13          |
+|40328|3         |3           |
+|40329|8         |8           |
+|40349|10        |10          |
+|40351|38        |38          |
+|40352|68        |68          |
+|40353|14        |14          |
+|40354|62        |62          |
++-----+----------+------------+
+
+
+================================================================================
+EMPID DISTRIBUTION
+================================================================================
++-----+----------+------------+
+|EMPID|prod_count|fabric_count|
++-----+----------+------------+
+|SYSTM|1710      |1710        |
+|5493 |1656      |1656        |
+|0    |1638      |1638        |
+|3414 |1142      |1142        |
+|99999|367       |367         |
+|3761 |195       |195         |
+|5780 |164       |164         |
+|4176 |152       |152         |
+|5668 |147       |147         |
+|5147 |139       |139         |
+|8308 |134       |134         |
+|5666 |126       |126         |
+|3734 |106       |106         |
+|6105 |102       |102         |
+|14020|96        |96          |
+|5873 |95        |95          |
+|6012 |93        |93          |
+|5636 |91        |91          |
+|8445 |89        |89          |
+|3806 |88        |88          |
+|4518 |84        |84          |
+|5534 |79        |79          |
+|5685 |76        |76          |
+|6003 |64        |64          |
+|5417 |62        |62          |
+|8192 |59        |59          |
+|6002 |57        |57          |
+|6119 |57        |57          |
+|5793 |56        |56          |
+|14050|55        |55          |
+|5664 |55        |55          |
+|8081 |55        |55          |
+|4895 |54        |54          |
+|6137 |53        |53          |
+|14028|52        |52          |
+|3194 |52        |52          |
+|5540 |48        |48          |
+|6062 |48        |48          |
+|6021 |40        |40          |
+|6049 |40        |40          |
+|5703 |39        |39          |
+|5246 |36        |36          |
+|5451 |35        |35          |
+|6076 |29        |29          |
+|5469 |28        |28          |
+|5818 |23        |23          |
+|5860 |23        |23          |
+|4167 |21        |21          |
+|4452 |19        |19          |
+|4117 |17        |17          |
++-----+----------+------------+
+
+
+================================================================================
+MACHINE DISTRIBUTION
+================================================================================
++-----------------+----------+------------+
+|MACHINE          |prod_count|fabric_count|
++-----------------+----------+------------+
+|NULL             |4286      |0           |
+|NULL             |0         |4286        |
+|ALPHA307         |18        |18          |
+|ALPHA318         |12        |12          |
+|ALPHA806         |9         |9           |
+|AME10            |19        |19          |
+|AME15            |24        |24          |
+|AME19            |2         |2           |
+|AME20            |25        |25          |
+|AME21            |9         |9           |
+|AME22            |11        |11          |
+|AME23            |3         |3           |
+|AME312           |14        |14          |
+|AME314           |6         |6           |
+|AME317           |7         |7           |
+|AME324           |2         |2           |
+|AME325           |1         |1           |
+|AME326           |13        |13          |
+|AME327           |5         |5           |
+|AME328           |18        |18          |
+|ASML100-301      |25        |25          |
+|ASML100-304      |13        |13          |
+|ASML100-305      |2         |2           |
+|ASML100-308      |23        |23          |
+|ASML100-318      |28        |28          |
+|ASML100-319      |13        |13          |
+|ATLAS305         |267       |267         |
+|BLAP NOTCH FINDER|8         |8           |
+|CDSEM304         |2         |2           |
+|CMP2             |15        |15          |
+|CMP3             |15        |15          |
+|CMP4             |58        |58          |
+|CMP6             |17        |17          |
+|CURE302          |12        |12          |
+|DETAPE103        |7         |7           |
+|ECLIPSE106       |24        |24          |
+|ELIPS10          |114       |114         |
+|ELIPS311         |247       |247         |
+|ENDURA211        |7         |7           |
+|ENDURA306        |8         |8           |
+|ENDURA307        |3         |3           |
+|ENDURA309        |13        |13          |
+|ENDURA5          |6         |6           |
+|EPI12            |3         |3           |
+|EPI6             |1         |1           |
+|EPI8             |4         |4           |
+|FLEX1            |7         |7           |
+|FUSION302        |14        |14          |
+|FUSION304        |7         |7           |
+|FUSION305        |16        |16          |
++-----------------+----------+------------+
+
+
+================================================================================
+SUMMARY METRICS
+================================================================================
+Prod Summary
++----+----+-----+-----+--------+------+
+|rows|lots|opers|users|machines|empids|
++----+----+-----+-----+--------+------+
+|9923|1259|460  |235  |190     |76    |
++----+----+-----+-----+--------+------+
+
+Fabric Summary
++----+----+-----+-----+--------+------+
+|rows|lots|opers|users|machines|empids|
++----+----+-----+-----+--------+------+
+|9923|1259|460  |235  |190     |76    |
++----+----+-----+-----+--------+------+
+
+
+================================================================================
+ATTRIBUTE MISMATCH ANALYSIS
+================================================================================
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+
+|OPER_MISMATCH|OPERDESC_MISMATCH|OPERLONGDESC_MISMATCH|TRANS_MISMATCH|HIST_REC_MISMATCH|MACHINE_MISMATCH|USERNAME_MISMATCH|COMMAND_MISMATCH|EMPID_MISMATCH|
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+
+|0            |0                |0                    |1202          |1420             |8               |10               |8               |0             |
++-------------+-----------------+---------------------+--------------+-----------------+----------------+-----------------+----------------+--------------+
+
+
+================================================================================
+TRANS MISMATCH SAMPLE
+================================================================================
++---------+-----------------------+---------+----------+------------+
+|LOT      |DATE_TIME              |HISTORDER|PROD_TRANS|FABRIC_TRANS|
++---------+-----------------------+---------+----------+------------+
+|7480A135 |2026-08-11 14:15:38.517|1        |WAIT MVOU |COMMENT     |
+|7480A135 |2026-08-11 14:15:38.517|1        |COMMENT   |WAIT MVOU   |
+|6814A052 |2026-08-11 14:15:38.737|1        |WAIT MVOU |COMMENT     |
+|6814A052 |2026-08-11 14:15:38.737|1        |COMMENT   |WAIT MVOU   |
+|6211A062 |2026-08-11 14:15:38.937|1        |WAIT MVOU |COMMENT     |
+|6211A062 |2026-08-11 14:15:38.937|1        |COMMENT   |WAIT MVOU   |
+|7225ABU5 |2026-08-11 14:15:39.15 |1        |WAIT MVOU |COMMENT     |
+|7225ABU5 |2026-08-11 14:15:39.15 |1        |COMMENT   |WAIT MVOU   |
+|7985A1N3 |2026-08-11 14:15:47.137|1        |DISPATCH  |COMMENT     |
+|7985A1N3 |2026-08-11 14:15:47.137|1        |COMMENT   |DISPATCH    |
+|7347A0D3 |2026-08-11 14:15:51.32 |1        |REPOSITION|COMMENT     |
+|7347A0D3 |2026-08-11 14:15:51.32 |1        |COMMENT   |REPOSITION  |
+|5773A1C3 |2026-08-11 14:15:55.067|1        |DISPATCH  |COMMENT     |
+|5773A1C3 |2026-08-11 14:15:55.067|1        |COMMENT   |DISPATCH    |
+|5412A067 |2026-08-11 14:15:55.28 |1        |DISPATCH  |COMMENT     |
+|5412A067 |2026-08-11 14:15:55.28 |1        |COMMENT   |DISPATCH    |
+|5620AFY5 |2026-08-11 14:15:55.52 |1        |DISPATCH  |COMMENT     |
+|5620AFY5 |2026-08-11 14:15:55.52 |1        |COMMENT   |DISPATCH    |
+|6780A075 |2026-08-11 14:15:55.777|1        |DISPATCH  |COMMENT     |
+|6780A075 |2026-08-11 14:15:55.777|1        |COMMENT   |DISPATCH    |
+|7412A0D7B|2026-08-11 14:16:00.52 |1        |TRANSITION|COMMENT     |
+|7412A0D7B|2026-08-11 14:16:00.52 |1        |COMMENT   |TRANSITION  |
+|7412A0D7B|2026-08-11 14:16:01.93 |1        |MOVE IN   |COMMENT     |
+|7412A0D7B|2026-08-11 14:16:01.93 |1        |COMMENT   |MOVE IN     |
+|6530TG935|2026-08-11 14:16:07.94 |1        |UNDISPATCH|COMMENT     |
+|6530TG935|2026-08-11 14:16:07.94 |1        |COMMENT   |UNDISPATCH  |
+|5500A002 |2026-08-11 14:16:47.91 |1        |TRANSITION|COMMENT     |
+|5500A002 |2026-08-11 14:16:47.91 |1        |COMMENT   |TRANSITION  |
+|5500A002 |2026-08-11 14:16:49.14 |1        |MOVE IN   |COMMENT     |
+|5500A002 |2026-08-11 14:16:49.14 |1        |COMMENT   |MOVE IN     |
+|5849A025 |2026-08-11 14:17:04.333|1        |TRANSITION|COMMENT     |
+|5849A025 |2026-08-11 14:17:04.333|1        |COMMENT   |TRANSITION  |
+|6081A022 |2026-08-11 14:17:10.09 |1        |DISPATCH  |COMMENT     |
+|6081A022 |2026-08-11 14:17:10.09 |1        |COMMENT   |DISPATCH    |
+|6880A5U5 |2026-08-11 14:17:17.33 |1        |DISPATCH  |COMMENT     |
+|6880A5U5 |2026-08-11 14:17:17.33 |1        |COMMENT   |DISPATCH    |
+|6814A054 |2026-08-11 14:17:17.55 |1        |DISPATCH  |COMMENT     |
+|6814A054 |2026-08-11 14:17:17.55 |1        |COMMENT   |DISPATCH    |
+|6814A051 |2026-08-11 14:17:17.753|1        |DISPATCH  |COMMENT     |
+|6814A051 |2026-08-11 14:17:17.753|1        |COMMENT   |DISPATCH    |
+|5790A067 |2026-08-11 14:17:17.983|1        |DISPATCH  |COMMENT     |
+|5790A067 |2026-08-11 14:17:17.983|1        |COMMENT   |DISPATCH    |
+|5620AG06 |2026-08-11 14:17:18.517|1        |TRANSITION|COMMENT     |
+|5620AG06 |2026-08-11 14:17:18.517|1        |COMMENT   |TRANSITION  |
+|5941A105 |2026-08-11 14:17:28.23 |1        |TRANSITION|COMMENT     |
+|5941A105 |2026-08-11 14:17:28.23 |1        |COMMENT   |TRANSITION  |
+|5941A105 |2026-08-11 14:17:30.177|1        |MOVE IN   |COMMENT     |
+|5941A105 |2026-08-11 14:17:30.177|1        |COMMENT   |MOVE IN     |
+|6253A245 |2026-08-11 14:17:31.707|1        |TRANSITION|COMMENT     |
+|6253A245 |2026-08-11 14:17:31.707|1        |COMMENT   |TRANSITION  |
++---------+-----------------------+---------+----------+------------+
+
+
+================================================================================
+COMMAND MISMATCH SAMPLE
+================================================================================
++--------+-----------------------+---------+------------+--------------+
+|LOT     |DATE_TIME              |HISTORDER|PROD_COMMAND|FABRIC_COMMAND|
++--------+-----------------------+---------+------------+--------------+
+|7225ABT9|2026-08-11 14:37:04.953|1        |LEDC        |TRAN          |
+|7225ABT9|2026-08-11 14:37:04.953|1        |TRAN        |LEDC          |
+|7225ABT9|2026-08-11 14:37:07.507|1        |LEDC        |MVIN          |
+|7225ABT9|2026-08-11 14:37:07.507|1        |MVIN        |LEDC          |
+|5941A0L5|2026-08-11 14:44:19.813|1        |LEDC        |TRAN          |
+|5941A0L5|2026-08-11 14:44:19.813|1        |TRAN        |LEDC          |
+|5941A0L5|2026-08-11 14:44:22.14 |1        |LEDC        |MVIN          |
+|5941A0L5|2026-08-11 14:44:22.14 |1        |MVIN        |LEDC          |
++--------+-----------------------+---------+------------+--------------+
+
+
+================================================================================
+HIST_REC MISMATCH SAMPLE
+================================================================================
++---------+-----------------------+---------+--------------------------------------+--------------------------------------+
+|LOT      |DATE_TIME              |HISTORDER|PROD_HIST_REC                         |FABRIC_HIST_REC                       |
++---------+-----------------------+---------+--------------------------------------+--------------------------------------+
+|7480A135 |2026-08-11 14:15:38.517|1        |QTY: 25                               |Automated Move                        |
+|7480A135 |2026-08-11 14:15:38.517|1        |Automated Move                        |QTY: 25                               |
+|6814A052 |2026-08-11 14:15:38.737|1        |QTY: 25                               |Automated Move                        |
+|6814A052 |2026-08-11 14:15:38.737|1        |Automated Move                        |QTY: 25                               |
+|6211A062 |2026-08-11 14:15:38.937|1        |QTY: 25                               |Automated Move                        |
+|6211A062 |2026-08-11 14:15:38.937|1        |Automated Move                        |QTY: 25                               |
+|7225ABU5 |2026-08-11 14:15:39.15 |1        |QTY: 25                               |Automated Move                        |
+|7225ABU5 |2026-08-11 14:15:39.15 |1        |Automated Move                        |QTY: 25                               |
+|7985A1N3 |2026-08-11 14:15:47.137|1        |QTY: 25                               |Dispatched by Local Rules.            |
+|7985A1N3 |2026-08-11 14:15:47.137|1        |Dispatched by Local Rules.            |QTY: 25                               |
+|7347A0D3 |2026-08-11 14:15:51.32 |1        |QTY: 25 NEW= Q :: IN QUEUE      OLD= P|program updated                       |
+|7347A0D3 |2026-08-11 14:15:51.32 |1        |program updated                       |QTY: 25 NEW= Q :: IN QUEUE      OLD= P|
+|5773A1C3 |2026-08-11 14:15:55.067|1        |QTY: 25                               |Dispatched by Local Rules.            |
+|5773A1C3 |2026-08-11 14:15:55.067|1        |Dispatched by Local Rules.            |QTY: 25                               |
+|5412A067 |2026-08-11 14:15:55.28 |1        |QTY: 25                               |Dispatched by Local Rules.            |
+|5412A067 |2026-08-11 14:15:55.28 |1        |Dispatched by Local Rules.            |QTY: 25                               |
+|5620AFY5 |2026-08-11 14:15:55.52 |1        |QTY: 25                               |Dispatched by Local Rules.            |
+|5620AFY5 |2026-08-11 14:15:55.52 |1        |Dispatched by Local Rules.            |QTY: 25                               |
+|6780A075 |2026-08-11 14:15:55.777|1        |QTY: 25                               |Dispatched by Local Rules.            |
+|6780A075 |2026-08-11 14:15:55.777|1        |Dispatched by Local Rules.            |QTY: 25                               |
+|7412A0D7B|2026-08-11 14:16:00.52 |1        |QTY: 25 TD                            |LotMoveIn Part 1                      |
+|7412A0D7B|2026-08-11 14:16:00.52 |1        |LotMoveIn Part 1                      |QTY: 25 TD                            |
+|7412A0D7B|2026-08-11 14:16:01.93 |1        |QTY: 25                               |LotMoveIn Part 2                      |
+|7412A0D7B|2026-08-11 14:16:01.93 |1        |LotMoveIn Part 2                      |QTY: 25                               |
+|6530TG935|2026-08-11 14:16:07.94 |1        | NEW= Q :: IN QUEUE      OLD= D       |UnDispatch (F2281)                    |
+|6530TG935|2026-08-11 14:16:07.94 |1        |UnDispatch (F2281)                    | NEW= Q :: IN QUEUE      OLD= D       |
+|5500A002 |2026-08-11 14:16:47.91 |1        |QTY: 25 TD                            |LotMoveIn Part 1                      |
+|5500A002 |2026-08-11 14:16:47.91 |1        |LotMoveIn Part 1                      |QTY: 25 TD                            |
+|5500A002 |2026-08-11 14:16:49.14 |1        |QTY: 25                               |LotMoveIn Part 2                      |
+|5500A002 |2026-08-11 14:16:49.14 |1        |LotMoveIn Part 2                      |QTY: 25                               |
+|5849A025 |2026-08-11 14:17:04.333|1        |QTY: 25 TD                            |LotMoveIn Part 1                      |
+|5849A025 |2026-08-11 14:17:04.333|1        |LotMoveIn Part 1                      |QTY: 25 TD                            |
+|6081A022 |2026-08-11 14:17:10.09 |1        |QTY: 25                               |Dispatched by Local Rules.            |
+|6081A022 |2026-08-11 14:17:10.09 |1        |Dispatched by Local Rules.            |QTY: 25                               |
+|6880A5U5 |2026-08-11 14:17:17.33 |1        |QTY: 25                               |Dispatched by Local Rules.            |
+|6880A5U5 |2026-08-11 14:17:17.33 |1        |Dispatched by Local Rules.            |QTY: 25                               |
+|6814A054 |2026-08-11 14:17:17.55 |1        |QTY: 25                               |Dispatched by Local Rules.            |
+|6814A054 |2026-08-11 14:17:17.55 |1        |Dispatched by Local Rules.            |QTY: 25                               |
+|6814A051 |2026-08-11 14:17:17.753|1        |QTY: 25                               |Dispatched by Local Rules.            |
+|6814A051 |2026-08-11 14:17:17.753|1        |Dispatched by Local Rules.            |QTY: 25                               |
+|5790A067 |2026-08-11 14:17:17.983|1        |QTY: 25                               |Dispatched by Local Rules.            |
+|5790A067 |2026-08-11 14:17:17.983|1        |Dispatched by Local Rules.            |QTY: 25                               |
+|5620AG06 |2026-08-11 14:17:18.517|1        |QTY: 25 TD                            |LotMoveIn Part 1                      |
+|5620AG06 |2026-08-11 14:17:18.517|1        |LotMoveIn Part 1                      |QTY: 25 TD                            |
+|5941A105 |2026-08-11 14:17:28.23 |1        |QTY: 25 TD                            |LotMoveIn Part 1                      |
+|5941A105 |2026-08-11 14:17:28.23 |1        |LotMoveIn Part 1                      |QTY: 25 TD                            |
+|5941A105 |2026-08-11 14:17:30.177|1        |QTY: 25                               |LotMoveIn Part 2                      |
+|5941A105 |2026-08-11 14:17:30.177|1        |LotMoveIn Part 2                      |QTY: 25                               |
+|6253A245 |2026-08-11 14:17:31.707|1        |QTY: 25 TD                            |LotMoveIn Part 1                      |
+|6253A245 |2026-08-11 14:17:31.707|1        |LotMoveIn Part 1                      |QTY: 25 TD                            |
++---------+-----------------------+---------+--------------------------------------+--------------------------------------+
