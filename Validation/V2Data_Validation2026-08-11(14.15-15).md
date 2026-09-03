@@ -43,12 +43,12 @@ graph TD
     classDef perfectStyle fill:#eafaf1,stroke:#2ecc71,stroke-width:3px;
 
     subgraph Comparison ["V2 Data Volume Distribution (Aug 11 14.15-15)"]
-        P[Production Rows: 9,923]:::prodStyle
-        F[Fabric V2 Rows: 9,923]:::fabricStyle
-        C[Common Match Rows: 9,923]:::perfectStyle
+        P["Production Rows: 9,923"]:::prodStyle
+        F["Fabric V2 Rows: 9,923"]:::fabricStyle
+        C["Common Match Rows: 9,923"]:::perfectStyle
         
-        P -->|9,923 Perfect Intersect (100.0%)| C
-        F -->|9,923 Perfect Intersect (100.0%)| C
+        P --> C
+        F --> C
     end
 
     style Comparison fill:#f9f9f9,stroke:#ddd,stroke-width:1px;

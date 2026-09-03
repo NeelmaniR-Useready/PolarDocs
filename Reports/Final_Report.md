@@ -25,26 +25,42 @@ The V2 view enhancement (implementing explicit type-casting for `CONCAT(CAST(H.M
 
 ## 📊 2. Visual Analytics & V2 Timeline Comparison
 
-### A. Direct Intersect Match Rate Trend Across Timelines (%)
+### A. Direct Intersect Match Rate Progression Across Timelines (%)
 
 ```mermaid
-xychart-beta
-    title "V2 Direct Intersect Match Rate Progression Across Timelines (%)"
-    x-axis ["May 03 (00-01)", "Aug 10 (04-05)", "Aug 10 (10.15-11)", "Aug 11 (14.15-15)"]
-    y-axis "Match Rate (%)" 98 --> 100
-    bar [99.40, 99.96, 99.96, 100.00]
-    line [99.40, 99.96, 99.96, 100.00]
+graph LR
+    subgraph Progression ["V2 Direct Intersect Match Rate Progression Across Timelines"]
+        T1["May 03 (00-01)<br><b>99.40% Match</b><br>8,349 / 8,399 rows"]
+        T2["Aug 10 (04-05)<br><b>99.96% Match</b><br>9,431 / 9,435 rows"]
+        T3["Aug 10 (10-11)<br><b>99.96% Match</b><br>9,906 / 9,910 rows"]
+        T4["Aug 11 (14-15)<br><b>100.0% Perfect Match</b><br>9,923 / 9,923 rows"]
+        
+        T1 -->|"+0.56%"| T2
+        T2 -->|"Parity"| T3
+        T3 -->|"+0.04%"| T4
+    end
+
+    style T1 fill:#e6f3ff,stroke:#3385ff,stroke-width:2px
+    style T2 fill:#d4edda,stroke:#28a745,stroke-width:2px
+    style T3 fill:#d4edda,stroke:#28a745,stroke-width:2px
+    style T4 fill:#c3e6cb,stroke:#155724,stroke-width:3px
 ```
 
-### B. Production vs. Fabric V2 Data Volume Comparison
+### B. Production vs. Fabric V2 Total Row Count Comparison (0 Delta)
 
 ```mermaid
-xychart-beta
-    title "Production vs. Fabric V2 Total Row Count Comparison (0 Delta)"
-    x-axis ["May 03 (00-01)", "Aug 10 (04-05)", "Aug 10 (10.15-11)", "Aug 11 (14.15-15)"]
-    y-axis "Total Records" 8000 --> 10500
-    bar [8399, 9435, 9910, 9923]
-    line [8399, 9435, 9910, 9923]
+graph TD
+    subgraph Volume ["Production vs. Fabric V2 Volume Parity Across Timelines (0 Delta)"]
+        S1["May 03 (00-01)<br>Prod: 8,399 | Fabric V2: 8,399<br><b>Delta: 0 Rows (100% Parity)</b>"]
+        S2["Aug 10 (04-05)<br>Prod: 9,435 | Fabric V2: 9,435<br><b>Delta: 0 Rows (100% Parity)</b>"]
+        S3["Aug 10 (10-11)<br>Prod: 9,910 | Fabric V2: 9,910<br><b>Delta: 0 Rows (100% Parity)</b>"]
+        S4["Aug 11 (14-15)<br>Prod: 9,923 | Fabric V2: 9,923<br><b>Delta: 0 Rows (100% Parity)</b>"]
+    end
+
+    style S1 fill:#eafaf1,stroke:#2ecc71,stroke-width:2px
+    style S2 fill:#eafaf1,stroke:#2ecc71,stroke-width:2px
+    style S3 fill:#eafaf1,stroke:#2ecc71,stroke-width:2px
+    style S4 fill:#eafaf1,stroke:#2ecc71,stroke-width:2px
 ```
 
 ### C. Progression of Direct Match Rate (V1 vs. V2 Comparison)
@@ -55,32 +71,31 @@ graph LR
         V1_May["May 03: 96.76%"]
         V1_Aug10a["Aug 10 (04-05): 96.42%"]
         V1_Aug10b["Aug 10 (10-11): 96.51%"]
-        V1_Aug11["Aug 11: 97.22%"]
+        V1_Aug11["Aug 11 (14-15): 97.22%"]
     end
 
     subgraph V2 ["V2 Enhanced Performance"]
-        V2_May["May 03: 99.40% (+2.64%)"]
-        V2_Aug10a["Aug 10 (04-05): 99.96% (+3.54%)"]
-        V2_Aug10b["Aug 10 (10-11): 99.96% (+3.45%)"]
-        V2_Aug11["Aug 11: 100.00% (+2.78%)"]
+        V2_May["May 03: 99.40%"]
+        V2_Aug10a["Aug 10 (04-05): 99.96%"]
+        V2_Aug10b["Aug 10 (10-11): 99.96%"]
+        V2_Aug11["Aug 11 (14-15): 100.0%"]
     end
 
-    V1_May --> V2_May
-    V1_Aug10a --> V2_Aug10a
-    V1_Aug10b --> V2_Aug10b
-    V1_Aug11 --> V2_Aug11
+    V1_May -->|"+2.64%"| V2_May
+    V1_Aug10a -->|"+3.54%"| V2_Aug10a
+    V1_Aug10b -->|"+3.45%"| V2_Aug10b
+    V1_Aug11 -->|"+2.78%"| V2_Aug11
 
-    style V1 fill:#ffe6e6,stroke:#ff3333,stroke-width:1px;
-    style V2 fill:#eafaf1,stroke:#2ecc71,stroke-width:2px;
+    style V1 fill:#ffe6e6,stroke:#ff3333,stroke-width:1px
+    style V2 fill:#eafaf1,stroke:#2ecc71,stroke-width:2px
 ```
 
-### D. Data Volume Breakdown (Latest Snapshot: Aug 11 14:15 - 15:00)
+### D. Overall V2 Data Reconciliation Across All Snapshots
 
 ```mermaid
-pie title "Data Reconciliation Breakdown (Aug 11 Snapshot - 9,923 Total Rows)"
-    "Exact Matching Common Rows (100.0%)" : 9923
-    "Unmatched Production Rows (0.00%)" : 0
-    "Fabric Orphan / Extra Rows (0.00%)" : 0
+pie title Overall V2 Data Reconciliation Across All Snapshots
+    "Exact Intersect Match Rows" : 37609
+    "Sequence Tie Variance Rows" : 64
 ```
 
 ---

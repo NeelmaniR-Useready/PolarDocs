@@ -43,12 +43,12 @@ graph TD
     classDef commonStyle fill:#eafaf1,stroke:#2ecc71,stroke-width:2px;
 
     subgraph Comparison ["V2 Data Volume Distribution (Aug 10 10.15-11)"]
-        P[Production Rows: 9,910]:::prodStyle
-        F[Fabric V2 Rows: 9,910]:::fabricStyle
-        C[Common Match Rows: 9,906]:::commonStyle
+        P["Production Rows: 9,910"]:::prodStyle
+        F["Fabric V2 Rows: 9,910"]:::fabricStyle
+        C["Common Match Rows: 9,906"]:::commonStyle
         
-        P -->|9,906 Direct Intersect (99.96%)| C
-        F -->|9,906 Direct Intersect (99.96%)| C
+        P --> C
+        F --> C
     end
 
     style Comparison fill:#f9f9f9,stroke:#ddd,stroke-width:1px;
