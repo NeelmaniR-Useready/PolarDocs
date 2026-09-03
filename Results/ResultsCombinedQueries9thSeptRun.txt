@@ -1,0 +1,194 @@
+Query 1.
+Select COUNT_BIG (*) AS row,
+MAX(DATE_TIME) AS MAX_TIME from TrainingVision.LotHistV;
+
+SELECT COUNT_BIG(*) as row,
+max(DATE_TIME) as MAX_TIME
+FROM dbo.LOTHISTV;
+
+Fabric
+row	MAX_TIME
+67142503	2026-09-03 02:12:58.370000
+Production
+67123941	2026-09-03 00:34:43.650
+
+
+
+Query 2.
+Select COUNT_BIG (*) AS row,
+MAX(DATE_TIME) AS MAX_TIME from TrainingVision.LotHistV
+WHERE DATE_TIME <= '2026-09-03 00:34:43.650';
+
+
+Fabric
+row	MAX_TIME
+67123943	2026-09-03 00:34:43.650000
+Production
+67123941	2026-09-03 00:34:43.650
+
+-- select(67142503-67123941) as Diff -- 18562
+
+View defination in Fabric updated
+
+CREATE OR ALTER VIEW [TrainingVision].[LotHistV]
+AS
+SELECT
+    H.LOT,
+    H.DATE_TIME,
+    H.HISTORDER,
+    C.HISTTRANS AS TRANS,
+    H.OPER, 
+    H.MASK_LVL,
+    H.OPERDESC,
+    CONCAT(CAST(H.MASK_LVL AS VARCHAR(50)), '.', H.OPERDESC) AS OPERLONGDESC,
+    H.MACHINE,
+    H.USERNAME,
+    TrainingVision.PF_LOTHIST_HISTORY3(H.HISTCODE, H.COMMENT) AS HIST_REC,
+    H.HISTCODE,
+    H.COMMAND,
+    C.SHORTREPORT,
+    C.VIEWFLAG,
+    CASE
+        WHEN H.EMPID IN ('00000', '99999', 'SYSTM') THEN 0
+        ELSE 1
+    END AS Is_Person,
+    H.IS_DUPLICATE,
+    H.EMPID
+FROM  [Polar_Lakehouse_POC].[VisionProd].[dbo.LOTHIST] H
+INNER JOIN [Polar_Lakehouse_POC].[VisionProd].[dbo.HISTCODES] C
+    ON C.HISTCODE = H.HISTCODE
+WHERE C.VIEWFLAG IN ('E', 'I');
+
+more time specific queries I ran
+
+
+SELECT count (*) 
+FROM TrainingVision.LotHistV
+WHERE DATE_TIME BETWEEN
+      '2026-05-03 00:00:00'
+  AND '2026-05-03 01:00:00';
+
+Fabric
+- 8399 
+Production
+- 8399
+
+100 percent match
+
+SELECT count(*) 
+FROM TrainingVision.LotHistV
+WHERE DATE_TIME BETWEEN
+      '2026-08-10 04:00:00'
+  AND '2026-08-10 05:00:00';
+
+Fabric
+-- 9435
+Production
+-- 9435
+100 percent match
+
+SELECT count(*) 
+FROM TrainingVision.LotHistV
+WHERE DATE_TIME BETWEEN
+      '2026-08-10 10:16:00'
+  AND '2026-08-10 11:00:00';
+Fabric
+-- 9910
+Production
+-- 9910
+100 percent match
+
+SELECT count(*) 
+FROM TrainingVision.LotHistV
+WHERE DATE_TIME BETWEEN
+      '2026-08-11 14:15:00'
+  AND '2026-08-11 15:00:00';
+Fabric
+-- 9923
+Production
+-- 9923
+100 percent match
+
+
+
+These are the 4 timestamps that were considered before for validation now are showing 100 percent match which was ~97 percent before.
+
+Queried for an entire day for bigger sample space.
+  
+
+SELECT count(*) 
+FROM TrainingVision.LotHistV
+WHERE DATE_TIME BETWEEN
+      '2026-04-11'
+  AND '2026-04-12';
+
+Fabric
+-- 141586
+Production
+-- 141586
+100 percent match
+
+
+SELECT count(*) 
+FROM TrainingVision.LotHistV
+WHERE DATE_TIME BETWEEN
+      '2026-05-22'
+  AND '2026-05-23';
+Fabric
+-- 214711
+Production
+-- 214711
+100 percent match
+
+SELECT count(*) 
+FROM TrainingVision.LotHistV
+WHERE DATE_TIME BETWEEN
+      '2026-06-02'
+  AND '2026-06-03';
+Fabric
+-- 257080
+Production
+-- 257080
+100 percent match
+
+
+
+SELECT count(*) 
+FROM TrainingVision.LotHistV
+WHERE DATE_TIME BETWEEN
+      '2026-09-02'
+  AND '2026-09-03';
+Fabric
+-- 297009
+Production
+-- 297009
+
+100 percent match
+
+
+
+SELECT count(*) 
+FROM TrainingVision.LotHistV
+WHERE DATE_TIME BETWEEN
+      '2025-12-01'
+  AND '2026-01-01';
+Fabric
+--  1340277
+Production
+--  1340277
+100 percent match
+
+
+
+
+  SELECT count(*) 
+FROM dbo.LOTHISTV
+WHERE DATE_TIME BETWEEN
+      '2025-01-01'
+  AND '2026-01-01';
+
+Fabric
+-- 8912888
+Production
+-- 8912888
+100 percent match
