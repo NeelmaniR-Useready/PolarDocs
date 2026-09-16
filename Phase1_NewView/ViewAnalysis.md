@@ -298,6 +298,81 @@ pie showData
     "EQUIPSTS" : 8431
     "Remaining Lookups" : 1632
 ```
+# EQUIPHIS4 Fabric Migration Analysis Report (Updated)
+
+## Additional Validation Results Added
+
+### View Counts
+
+```sql
+SELECT COUNT(*) FROM MES_Analytics.EQUIPHIS4;
+-- 39,165,843
+
+SELECT COUNT(*) FROM dbo.EQUIPHIS4;
+-- 39,464,412
+```
+
+| View | Record Count |
+|------|-------------:|
+| MES_Analytics.EQUIPHIS4 | 39,165,843 |
+| dbo.EQUIPHIS4 | 39,464,412 |
+| Difference (Production - Fabric) | 298,569 |
+
+### View Locations
+
+**Fabric View**
+
+```text
+Schema : MES_Analytics
+View   : EQUIPHIS4
+```
+
+**Production View**
+
+```text
+Lakehouse : Polar_Lakehouse_POC
+Schema    : VisionProd
+View      : dbo.EQUIPHIS4
+```
+
+### Production Date Validation
+
+```sql
+SELECT MAX(DATE_TIME) FROM dbo.EQUIPHIS4;
+-- 3999-12-31 23:59:59.000
+```
+
+---
+
+## Updated Production Source Table Statistics
+
+| Production Table | Record Count |
+|---|---:|
+| dbo.EQUIPHIS | 6,522,542 |
+| dbo.EQUIPST1 | 54 |
+| dbo.EQUIPST2 | 42 |
+| dbo.EQUIPSTP | 66 |
+| dbo.EQUIPREPAIRCODES | 1,315 |
+| dbo.EQUIP | 9,676 |
+| dbo.MACHINE_TYPECODES | 255 |
+| dbo.MACHINE_GROUPCODES | 93 |
+| dbo.MACHINE_KINDCODES | 11 |
+| dbo.EQUIPSTS | 8,445 |
+| dbo.EQUIPHIS_COMMENTS | 33,002,208 |
+
+## Analysis Notes
+
+- Production view contains 39,464,412 rows.
+- Fabric view contains 39,165,843 rows.
+- Observed difference between environments is 298,569 rows.
+- Production view maximum DATE_TIME is 3999-12-31 23:59:59.000, indicating the dataset contains future sentinel/default date values in addition to operational timestamps.
+- EQUIPHIS_COMMENTS remains the largest contributing source table.
+- Combined production source footprint exceeds 39 million records.
+- EQUIPHIS and EQUIPHIS_COMMENTS together account for the overwhelming majority of rows contributing to the final view.
+
+## Existing report enhancement
+
+This section is intended to be appended to the previously generated report and supersedes earlier row-count observations where newer counts are available.
 
 # 🔍 Analytical Observations
 
