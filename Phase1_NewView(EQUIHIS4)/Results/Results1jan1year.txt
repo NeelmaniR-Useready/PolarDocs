@@ -1,0 +1,720 @@
+%%pyspark
+
+from pyspark.sql import functions as F
+
+# ============================================================
+# COLUMN NAMES
+# ============================================================
+
+column_names = [
+    "DATE_TIME_RUN",
+    "EMPID",
+    "MACHINE",
+    "MACHINE_DESCRIPTION",
+    "MACHINE_GROUP",
+    "MACHINE_TYPE",
+    "MACHINE_KIND",
+    "DATE_TIME",
+    "STATUS1_CODE",
+    "STATUS1_NAME",
+    "STATUS2_CODE",
+    "STATUS2_NAME",
+    "PM_CODE",
+    "PM_NAME",
+    "REPAIR1_CODE",
+    "REPAIR1_NAME",
+    "REPAIR2_CODE",
+    "REPAIR2_NAME",
+    "REPAIR3_CODE",
+    "REPAIR3_NAME",
+    "IGNORE_RECORD",
+    "COMMENTS",
+    "USERNAME",
+    "COMMENTTYPE",
+    "LINEORDER",
+    "MACHINE_PRIORITY",
+    "REPAIRCODE"
+]
+
+# ============================================================
+# LOAD DATA (NO HEADER)
+# ============================================================
+
+df_Prod = spark.read.csv(
+    "abfss://9dd39a9d-2357-46a3-913d-1ff996531e62@onelake.dfs.fabric.microsoft.com/26a167a1-535e-4366-95da-c08c7730c83b/Files/Production1jan1yearv.csv",
+    header=False,
+    inferSchema=True
+)
+
+df_Fabric = spark.read.csv(
+    "abfss://9dd39a9d-2357-46a3-913d-1ff996531e62@onelake.dfs.fabric.microsoft.com/26a167a1-535e-4366-95da-c08c7730c83b/Files/Fabric1jan1yearv.csv",
+    header=False,
+    inferSchema=True
+)
+
+# ============================================================
+# ASSIGN COLUMN NAMES
+# ============================================================
+
+df_Prod = df_Prod.toDF(*column_names)
+df_Fabric = df_Fabric.toDF(*column_names)
+
+# ============================================================
+# OPTIONAL CLEANUP
+# ============================================================
+
+def trim_all(df):
+    return df.select([
+        F.trim(F.col(c)).alias(c)
+        if df.schema[c].dataType.simpleString() == "string"
+        else F.col(c)
+        for c in df.columns
+    ])
+
+df_Prod = trim_all(df_Prod)
+df_Fabric = trim_all(df_Fabric)
+
+# ============================================================
+# CACHE
+# ============================================================
+
+df_Prod.cache()
+df_Fabric.cache()
+
+all_cols = column_names
+
+# ============================================================
+# ROW COUNTS
+# ============================================================
+
+print("=" * 100)
+print("ROW COUNTS")
+print("=" * 100)
+
+prod_count = df_Prod.count()
+fabric_count = df_Fabric.count()
+
+print("Prod Rows  :", prod_count)
+print("Fabric Rows:", fabric_count)
+
+# ============================================================
+# DISTINCT COUNTS
+# ============================================================
+
+print("=" * 100)
+print("PROD DISTINCT COUNTS")
+print("=" * 100)
+
+df_Prod.select(
+    *[F.countDistinct(c).alias(c) for c in all_cols]
+).show(vertical=True, truncate=False)
+
+print("=" * 100)
+print("FABRIC DISTINCT COUNTS")
+print("=" * 100)
+
+df_Fabric.select(
+    *[F.countDistinct(c).alias(c) for c in all_cols]
+).show(vertical=True, truncate=False)
+
+# ============================================================
+# NULL / EMPTY PROFILE
+# ============================================================
+
+print("=" * 100)
+print("PROD NULL PROFILE")
+print("=" * 100)
+
+df_Prod.select([
+    F.sum(
+        F.when(
+            F.col(c).isNull() |
+            (F.trim(F.col(c).cast("string")) == ""),
+            1
+        ).otherwise(0)
+    ).alias(c)
+    for c in all_cols
+]).show(vertical=True)
+
+print("=" * 100)
+print("FABRIC NULL PROFILE")
+print("=" * 100)
+
+df_Fabric.select([
+    F.sum(
+        F.when(
+            F.col(c).isNull() |
+            (F.trim(F.col(c).cast("string")) == ""),
+            1
+        ).otherwise(0)
+    ).alias(c)
+    for c in all_cols
+]).show(vertical=True)
+
+# ============================================================
+# DUPLICATES
+# ============================================================
+
+print("=" * 100)
+print("DUPLICATE ANALYSIS")
+print("=" * 100)
+
+print(
+    "Prod Duplicate Rows:",
+    prod_count - df_Prod.distinct().count()
+)
+
+print(
+    "Fabric Duplicate Rows:",
+    fabric_count - df_Fabric.distinct().count()
+)
+
+# ============================================================
+# FULL ROW COMPARISON
+# ============================================================
+
+print("=" * 100)
+print("FULL ROW COMPARISON")
+print("=" * 100)
+
+common_rows = df_Prod.intersect(df_Fabric).count()
+
+only_prod = df_Prod.exceptAll(df_Fabric)
+only_fabric = df_Fabric.exceptAll(df_Prod)
+
+only_prod_count = only_prod.count()
+only_fabric_count = only_fabric.count()
+
+print("Common Rows    :", common_rows)
+print("Only In Prod   :", only_prod_count)
+print("Only In Fabric :", only_fabric_count)
+
+# ============================================================
+# DATE RANGE ANALYSIS
+# ============================================================
+
+for c in ["DATE_TIME_RUN", "DATE_TIME"]:
+
+    print("=" * 100)
+    print(f"DATE ANALYSIS : {c}")
+    print("=" * 100)
+
+    print("PROD")
+
+    df_Prod.select(
+        F.min(c).alias("MIN"),
+        F.max(c).alias("MAX")
+    ).show(truncate=False)
+
+    print("FABRIC")
+
+    df_Fabric.select(
+        F.min(c).alias("MIN"),
+        F.max(c).alias("MAX")
+    ).show(truncate=False)
+
+# ============================================================
+# KEY COLUMNS
+# ============================================================
+
+key_cols = [
+    "MACHINE",
+    "DATE_TIME",
+    "LINEORDER"
+]
+
+print("Keys:", key_cols)
+
+# ============================================================
+# ATTRIBUTE MISMATCH ANALYSIS
+# ============================================================
+
+compare = (
+    df_Prod.alias("p")
+    .join(
+        df_Fabric.alias("f"),
+        key_cols,
+        "inner"
+    )
+)
+
+compare_cols = [
+    c for c in all_cols
+    if c not in key_cols
+]
+
+mismatch_summary = compare.agg(*[
+    F.sum(
+        F.when(
+            F.coalesce(
+                F.col(f"p.{c}").cast("string"),
+                F.lit("")
+            )
+            !=
+            F.coalesce(
+                F.col(f"f.{c}").cast("string"),
+                F.lit("")
+            ),
+            1
+        ).otherwise(0)
+    ).alias(f"{c}_MISMATCH")
+    for c in compare_cols
+])
+
+mismatch_summary.show(
+    vertical=True,
+    truncate=False
+)
+
+# ============================================================
+# ROWS ONLY IN PROD
+# ============================================================
+
+print("=" * 100)
+print("ROWS ONLY IN PROD")
+print("=" * 100)
+
+only_prod.show(
+    100,
+    truncate=False
+)
+
+# ============================================================
+# ROWS ONLY IN FABRIC
+# ============================================================
+
+print("=" * 100)
+print("ROWS ONLY IN FABRIC")
+print("=" * 100)
+
+only_fabric.show(
+    100,
+    truncate=False
+)
+
+
+  Results:
+===================================================================================================
+ROW COUNTS
+====================================================================================================
+Prod Rows  : 1048576
+Fabric Rows: 1048576
+====================================================================================================
+PROD DISTINCT COUNTS
+====================================================================================================
+-RECORD 0---------------------
+ DATE_TIME_RUN       | 795947 
+ EMPID               | 625    
+ MACHINE             | 3276   
+ MACHINE_DESCRIPTION | 1864   
+ MACHINE_GROUP       | 65     
+ MACHINE_TYPE        | 152    
+ MACHINE_KIND        | 4      
+ DATE_TIME           | 795947 
+ STATUS1_CODE        | 45     
+ STATUS1_NAME        | 45     
+ STATUS2_CODE        | 37     
+ STATUS2_NAME        | 37     
+ PM_CODE             | 44     
+ PM_NAME             | 44     
+ REPAIR1_CODE        | 1      
+ REPAIR1_NAME        | 1      
+ REPAIR2_CODE        | 1      
+ REPAIR2_NAME        | 1      
+ REPAIR3_CODE        | 1      
+ REPAIR3_NAME        | 1      
+ IGNORE_RECORD       | 3      
+ COMMENTS            | 6560   
+ USERNAME            | 1272   
+ COMMENTTYPE         | 23     
+ LINEORDER           | 31     
+ MACHINE_PRIORITY    | 8      
+ REPAIRCODE          | 471    
+
+====================================================================================================
+FABRIC DISTINCT COUNTS
+====================================================================================================
+-RECORD 0---------------------
+ DATE_TIME_RUN       | 771745 
+ EMPID               | 625    
+ MACHINE             | 3229   
+ MACHINE_DESCRIPTION | 1856   
+ MACHINE_GROUP       | 64     
+ MACHINE_TYPE        | 152    
+ MACHINE_KIND        | 4      
+ DATE_TIME           | 771745 
+ STATUS1_CODE        | 45     
+ STATUS1_NAME        | 45     
+ STATUS2_CODE        | 37     
+ STATUS2_NAME        | 37     
+ PM_CODE             | 44     
+ PM_NAME             | 44     
+ REPAIR1_CODE        | 1      
+ REPAIR1_NAME        | 1      
+ REPAIR2_CODE        | 1      
+ REPAIR2_NAME        | 1      
+ REPAIR3_CODE        | 1      
+ REPAIR3_NAME        | 1      
+ IGNORE_RECORD       | 3      
+ COMMENTS            | 2090   
+ USERNAME            | 1208   
+ COMMENTTYPE         | 2      
+ LINEORDER           | 1      
+ MACHINE_PRIORITY    | 8      
+ REPAIRCODE          | 471    
+
+====================================================================================================
+PROD NULL PROFILE
+====================================================================================================
+-RECORD 0----------------------
+ DATE_TIME_RUN       | 0       
+ EMPID               | 0       
+ MACHINE             | 0       
+ MACHINE_DESCRIPTION | 54315   
+ MACHINE_GROUP       | 0       
+ MACHINE_TYPE        | 0       
+ MACHINE_KIND        | 0       
+ DATE_TIME           | 0       
+ STATUS1_CODE        | 0       
+ STATUS1_NAME        | 0       
+ STATUS2_CODE        | 0       
+ STATUS2_NAME        | 902963  
+ PM_CODE             | 0       
+ PM_NAME             | 998311  
+ REPAIR1_CODE        | 0       
+ REPAIR1_NAME        | 0       
+ REPAIR2_CODE        | 0       
+ REPAIR2_NAME        | 0       
+ REPAIR3_CODE        | 0       
+ REPAIR3_NAME        | 0       
+ IGNORE_RECORD       | 163610  
+ COMMENTS            | 1027920 
+ USERNAME            | 0       
+ COMMENTTYPE         | 0       
+ LINEORDER           | 0       
+ MACHINE_PRIORITY    | 2087    
+ REPAIRCODE          | 0       
+
+====================================================================================================
+FABRIC NULL PROFILE
+====================================================================================================
+-RECORD 0----------------------
+ DATE_TIME_RUN       | 0       
+ EMPID               | 0       
+ MACHINE             | 0       
+ MACHINE_DESCRIPTION | 52960   
+ MACHINE_GROUP       | 0       
+ MACHINE_TYPE        | 0       
+ MACHINE_KIND        | 0       
+ DATE_TIME           | 0       
+ STATUS1_CODE        | 0       
+ STATUS1_NAME        | 0       
+ STATUS2_CODE        | 0       
+ STATUS2_NAME        | 874870  
+ PM_CODE             | 0       
+ PM_NAME             | 970218  
+ REPAIR1_CODE        | 0       
+ REPAIR1_NAME        | 0       
+ REPAIR2_CODE        | 0       
+ REPAIR2_NAME        | 0       
+ REPAIR3_CODE        | 0       
+ REPAIR3_NAME        | 0       
+ IGNORE_RECORD       | 163610  
+ COMMENTS            | 1024896 
+ USERNAME            | 0       
+ COMMENTTYPE         | 0       
+ LINEORDER           | 0       
+ MACHINE_PRIORITY    | 2126    
+ REPAIRCODE          | 0       
+
+====================================================================================================
+DUPLICATE ANALYSIS
+====================================================================================================
+Prod Duplicate Rows: 24755
+Fabric Duplicate Rows: 24149
+====================================================================================================
+FULL ROW COMPARISON
+====================================================================================================
+Common Rows    : 975423
+Only In Prod   : 49318
+Only In Fabric : 49318
+====================================================================================================
+DATE ANALYSIS : DATE_TIME_RUN
+====================================================================================================
+PROD
++----------------------+----------------------+
+|MIN                   |MAX                   |
++----------------------+----------------------+
+|2025-01-01 00:00:02.02|2026-01-01 23:59:09.09|
++----------------------+----------------------+
+
+FABRIC
++----------------------+----------------------+
+|MIN                   |MAX                   |
++----------------------+----------------------+
+|2025-01-01 00:00:02.02|2026-01-01 23:59:09.09|
++----------------------+----------------------+
+
+====================================================================================================
+DATE ANALYSIS : DATE_TIME
+====================================================================================================
+PROD
++----------------------+----------------------+
+|MIN                   |MAX                   |
++----------------------+----------------------+
+|2025-01-01 00:00:02.02|2026-01-01 23:59:09.09|
++----------------------+----------------------+
+
+FABRIC
++----------------------+----------------------+
+|MIN                   |MAX                   |
++----------------------+----------------------+
+|2025-01-01 00:00:02.02|2026-01-01 23:59:09.09|
++----------------------+----------------------+
+
+Keys: ['MACHINE', 'DATE_TIME', 'LINEORDER']
+-RECORD 0-----------------------------
+ DATE_TIME_RUN_MISMATCH       | 0     
+ EMPID_MISMATCH               | 55080 
+ MACHINE_DESCRIPTION_MISMATCH | 0     
+ MACHINE_GROUP_MISMATCH       | 0     
+ MACHINE_TYPE_MISMATCH        | 0     
+ MACHINE_KIND_MISMATCH        | 0     
+ STATUS1_CODE_MISMATCH        | 56484 
+ STATUS1_NAME_MISMATCH        | 56484 
+ STATUS2_CODE_MISMATCH        | 55032 
+ STATUS2_NAME_MISMATCH        | 55032 
+ PM_CODE_MISMATCH             | 55032 
+ PM_NAME_MISMATCH             | 55032 
+ REPAIR1_CODE_MISMATCH        | 0     
+ REPAIR1_NAME_MISMATCH        | 0     
+ REPAIR2_CODE_MISMATCH        | 0     
+ REPAIR2_NAME_MISMATCH        | 0     
+ REPAIR3_CODE_MISMATCH        | 0     
+ REPAIR3_NAME_MISMATCH        | 0     
+ IGNORE_RECORD_MISMATCH       | 55042 
+ COMMENTS_MISMATCH            | 26831 
+ USERNAME_MISMATCH            | 103   
+ COMMENTTYPE_MISMATCH         | 27949 
+ MACHINE_PRIORITY_MISMATCH    | 0     
+ REPAIRCODE_MISMATCH          | 627   
+
+====================================================================================================
+ROWS ONLY IN PROD
+====================================================================================================
++----------------------+-----+----------------+----------------------------------------+-------------+------------+------------+----------------------+------------+------------+------------+------------+-------+-------+------------+------------+------------+------------+------------+------------+-------------+--------+----------+-----------+---------+----------------+----------+
+|DATE_TIME_RUN         |EMPID|MACHINE         |MACHINE_DESCRIPTION                     |MACHINE_GROUP|MACHINE_TYPE|MACHINE_KIND|DATE_TIME             |STATUS1_CODE|STATUS1_NAME|STATUS2_CODE|STATUS2_NAME|PM_CODE|PM_NAME|REPAIR1_CODE|REPAIR1_NAME|REPAIR2_CODE|REPAIR2_NAME|REPAIR3_CODE|REPAIR3_NAME|IGNORE_RECORD|COMMENTS|USERNAME  |COMMENTTYPE|LINEORDER|MACHINE_PRIORITY|REPAIRCODE|
++----------------------+-----+----------------+----------------------------------------+-------------+------------+------------+----------------------+------------+------------+------------+------------+-------+-------+------------+------------+------------+------------+------------+------------+-------------+--------+----------+-----------+---------+----------------+----------+
+|2025-01-04 03:09:13.13|99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-01-04 03:09:13.13|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-08-06 16:21:49.49|99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-08-06 16:21:49.49|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-01-04 22:53:07.07|05744|WB91            |AKrion GAMA Critical Clean Wet Bench    |WET_PROCESS  |WB AUTO     |FAB         |2025-01-04 22:53:07.07|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |IBMOHAMUD |CS         |1        |3               |NULL      |
+|2025-02-23 12:24:24.24|99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-02-23 12:24:24.24|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-06-07 21:12:19.19|05902|WTS8.26         |WTS ML2-825 TRANSFER UNIT FOR MRL323    |DIFFUSION    |WTS         |FAB         |2025-06-07 21:12:19.19|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |CLILL     |CS         |1        |4               |NULL      |
+|2025-04-30 01:40:09.09|04061|WB84-Z.10_1     |Virtual 10-1                            |WET_PROCESS  |WB MANUAL   |FAB         |2025-04-30 01:40:09.09|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |SANDGRENS |CS         |1        |0               |NULL      |
+|2025-04-24 21:55:31.31|05466|ENDURA306.SIP_4 |Only Chamber 4                          |METAL        |ENDURA      |FAB         |2025-04-24 21:55:31.31|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NPHAN     |CS         |1        |0               |NULL      |
+|2025-04-01 03:58:24.24|04403|ENDURA306.SIP_4 |Only Chamber 4                          |METAL        |ENDURA      |FAB         |2025-04-01 03:58:24.24|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |GERMAINEM |CS         |1        |0               |NULL      |
+|2025-11-16 09:53:44.44|04117|WB389-R.7_1     |Virtual Tool                            |VIRTUAL      |NIPF        |FAB         |2025-11-16 09:53:44.44|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |MOHAMEDG  |CS         |1        |0               |NULL      |
+|2025-06-09 19:33:04.04|05906|WB104           |Wet Metal Etch Bench                    |WET_PROCESS  |WB SEMI AUTO|FAB         |2025-06-09 19:33:04.04|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |IBARKHAD  |CS         |1        |0               |NULL      |
+|2025-09-14 01:27:20.2 |05375|TAPE103         |NITTO WAFER TAPING MACHINE              |METAL        |BACKGRIND   |FAB         |2025-09-14 01:27:20.2 |1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |AKEY      |CS         |1        |0               |NULL      |
+|2025-01-26 01:42:26.26|05466|ENDURA306.SIP   |ENDURA306.SIP                           |VIRTUAL      |NIPF        |FAB         |2025-01-26 01:42:26.26|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NPHAN     |CS         |1        |0               |NULL      |
+|2025-11-15 08:58:01.01|99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-11-15 08:58:01.01|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-08-17 16:17:58.58|04117|WB85            |Wet Bench Sulfuric Strip                |WET_PROCESS  |WB AUTO     |FAB         |2025-08-17 16:17:58.58|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |MOHAMEDG  |CS         |1        |3               |NULL      |
+|2025-08-06 19:39:25.25|04656|WB85.BOE        |40_1                                    |VIRTUAL      |NIPF        |FAB         |2025-08-06 19:39:25.25|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |BURKEK    |CS         |1        |0               |NULL      |
+|2025-08-17 15:07:40.4 |99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-08-17 15:07:40.4 |1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-11-19 01:24:41.41|99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-11-19 01:24:41.41|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-06-06 19:59:03.03|03738|WTS8.54         |WTS FOR BACKGRIND                       |METAL        |WTS         |FAB         |2025-06-06 19:59:03.03|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |petersenr |CS         |1        |0               |NULL      |
+|2025-05-18 05:29:44.44|05375|ENDURA3.METAL   |Metal Dep                               |VIRTUAL      |NIPF        |FAB         |2025-05-18 05:29:44.44|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |AKEY      |CS         |1        |5               |NULL      |
+|2025-10-21 06:47:25.25|05650|WB389-L         |Wet Bench 40:1 BHF / 7:1 BHF            |WET_PROCESS  |WB SEMI AUTO|FAB         |2025-10-21 06:47:25.25|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |CBARRETT  |CS         |1        |0               |NULL      |
+|2025-09-18 06:46:44.44|05983|TAPE103         |NITTO WAFER TAPING MACHINE              |METAL        |BACKGRIND   |FAB         |2025-09-18 06:46:44.44|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |DKRAGNESS |CS         |1        |0               |NULL      |
+|2025-05-02 00:08:09.09|05729|WTS8.23         |WTS for Back Metal Eclipse12 (BSM)      |METAL        |WTS         |FAB         |2025-05-02 00:08:09.09|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |WYOUNG    |CS         |1        |4               |NULL      |
+|2025-02-10 23:16:06.06|04403|ENDURA306.SIP_4 |Only Chamber 4                          |METAL        |ENDURA      |FAB         |2025-02-10 23:16:06.06|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |GERMAINEM |CS         |1        |0               |NULL      |
+|2025-07-20 15:23:55.55|08448|ENDURA2.ALCU    |ENDURA2.ALCU                            |VIRTUAL      |NIPF        |FAB         |2025-07-20 15:23:55.55|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |JOKSNESS  |CS         |1        |0               |NULL      |
+|2025-07-20 18:58:56.56|02854|SWAP_FEOL       |Tool for box swap operation             |GENERAL      |N/A         |FAB         |2025-07-20 18:58:56.56|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |fellingc  |CS         |1        |0               |NULL      |
+|2025-07-20 18:58:56.56|02854|SWAP_FEOL       |Tool for box swap operation             |GENERAL      |N/A         |FAB         |2025-07-20 18:58:56.56|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |fellingc  |CS         |1        |0               |NULL      |
+|2025-07-20 19:29:18.18|99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-07-20 19:29:18.18|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-04-11 09:10:02.02|05534|WTS8.54         |WTS FOR BACKGRIND                       |METAL        |WTS         |FAB         |2025-04-11 09:10:02.02|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |kmekuria  |CS         |1        |0               |NULL      |
+|2025-05-27 12:07:45.45|03719|WB86-ABC        |Metal Test Baffle Clean                 |WET_PROCESS  |WB MANUAL   |FAB         |2025-05-27 12:07:45.45|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |TOKPAHJ   |CS         |1        |4               |NULL      |
+|2025-04-15 18:10:30.3 |04849|ENDURA5.TIN     |TiN                                     |VIRTUAL      |IPF         |FAB         |2025-04-15 18:10:30.3 |1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |KIMY      |CS         |1        |1               |NULL      |
+|2025-10-11 14:18:48.48|05441|VDF210          |TEL ALPHA8SEi Vertical Oxidation Furnace|DIFFUSION    |VDF         |FAB         |2025-10-11 14:18:48.48|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |KTRAN     |CS         |1        |0               |NULL      |
+|2025-10-11 19:22:10.1 |05375|ENDURA5.TI_TIN  |ENDURA5.TI and ENDURA5.TIN              |VIRTUAL      |NIPF        |FAB         |2025-10-11 19:22:10.1 |1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |AKEY      |CS         |1        |0               |NULL      |
+|2025-02-10 18:31:22.22|04403|ENDURA307.SIP_4 |NULL                                    |VIRTUAL      |ENDURA      |FAB         |2025-02-10 18:31:22.22|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |GERMAINEM |CS         |1        |0               |NULL      |
+|2025-02-07 23:27:05.05|05763|TEL307.COATER   |COAT                                    |VIRTUAL      |NIPF        |FAB         |2025-02-07 23:27:05.05|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |DPAGE     |CS         |1        |5               |NULL      |
+|2025-02-10 18:46:18.18|04849|ENDURA2.CO_TI   |CO_TI                                   |VIRTUAL      |NIPF        |FAB         |2025-02-10 18:46:18.18|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |KIMY      |CS         |1        |1               |NULL      |
+|2025-03-01 09:42:47.47|08448|ENDURA4         |METAL DEP TI/TIN/CO/SIP/PT              |METAL        |ENDURA      |FAB         |2025-03-01 09:42:47.47|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |JOKSNESS  |CS         |1        |1               |NULL      |
+|2025-01-25 22:32:13.13|04673|VIISTA301       |AMAT 900XP MEHD1 MED Current Implanter  |IMPLANT      |VIISTA      |FAB         |2025-01-25 22:32:13.13|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |HERX      |CS         |1        |0               |NULL      |
+|2025-04-18 19:02:03.03|04660|ENDURA4         |METAL DEP TI/TIN/CO/SIP/PT              |METAL        |ENDURA      |FAB         |2025-04-18 19:02:03.03|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |DAOHEUANGJ|CS         |1        |1               |NULL      |
+|2025-04-18 17:44:38.38|04393|WB84-Y          |Wet Bench 10:1 HF                       |WET_PROCESS  |WB MANUAL   |FAB         |2025-04-18 17:44:38.38|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NONGM     |CS         |1        |3               |NULL      |
+|2025-02-18 06:51:55.55|05664|AME10.D         |Oxide Etch Process Chamber              |ETCH         |AME         |FAB         |2025-02-18 06:51:55.55|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |LREMER    |CS         |1        |2               |NULL      |
+|2025-10-02 03:53:35.35|04403|ENDURA308.3_ALCU|METAL DEP AL/CU0.5%                     |METAL        |ENDURA      |FAB         |2025-10-02 03:53:35.35|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |GERMAINEM |CS         |1        |0               |NULL      |
+|2025-08-24 16:29:50.5 |08448|ENDURA5.ALCU_1  |CH1 only                                |METAL        |ENDURA      |FAB         |2025-08-24 16:29:50.5 |1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |JOKSNESS  |CS         |1        |0               |NULL      |
+|2025-01-25 03:59:29.29|99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-01-25 03:59:29.29|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-06-16 02:01:36.36|08038|WB89-R.WB89-R.B |70:1 BHF etch                           |VIRTUAL      |NIPF        |FAB         |2025-06-16 02:01:36.36|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |TEAMEB    |CS         |1        |5               |NULL      |
+|2025-12-06 13:33:50.5 |06059|WB102           |Steag AWP FEOL Critical Clean WB        |WET_PROCESS  |WB AUTO     |FAB         |2025-12-06 13:33:50.5 |1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |TDROTNING |CS         |1        |0               |NULL      |
+|2025-05-05 05:25:04.04|05466|ENDURA306.TI_TIN|ENDURA306.TI and ENDURA306.TIN          |VIRTUAL      |NIPF        |FAB         |2025-05-05 05:25:04.04|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NPHAN     |CS         |1        |0               |NULL      |
+|2025-05-24 11:58:33.33|04393|WB89-L          |Wet Bench 40:1 BHF / 7:1 BHF            |WET_PROCESS  |WB SEMI AUTO|FAB         |2025-05-24 11:58:33.33|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NONGM     |CS         |1        |3               |NULL      |
+|2025-02-03 09:58:51.51|04488|WB81.VA         |Virtual A                               |VIRTUAL      |NIPF        |FAB         |2025-02-03 09:58:51.51|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |ODDENE    |CS         |1        |5               |NULL      |
+|2025-06-16 05:17:53.53|04403|ENDURA308.TIN   |NULL                                    |VIRTUAL      |ENDURA      |FAB         |2025-06-16 05:17:53.53|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |GERMAINEM |CS         |1        |0               |NULL      |
+|2025-11-18 23:42:03.03|04849|ENDURA2.CO_TI   |CO_TI                                   |VIRTUAL      |NIPF        |FAB         |2025-11-18 23:42:03.03|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |KIMY      |CS         |1        |1               |NULL      |
+|2025-11-15 07:23:18.18|99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-11-15 07:23:18.18|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-05-21 14:47:10.1 |99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-05-21 14:47:10.1 |1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-06-09 05:25:18.18|99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-06-09 05:25:18.18|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-05-18 01:13:57.57|04531|WB84-Z.10_1     |Virtual 10-1                            |WET_PROCESS  |WB MANUAL   |FAB         |2025-05-18 01:13:57.57|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |GOITOMY   |CS         |1        |0               |NULL      |
+|2025-01-08 14:38:13.13|04393|WB81.PHOS       |Virtual                                 |VIRTUAL      |NIPF        |FAB         |2025-01-08 14:38:13.13|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NONGM     |CS         |1        |5               |NULL      |
+|2025-01-04 03:27:27.27|99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-01-04 03:27:27.27|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-08-31 14:09:35.35|05246|ENDURA307.METAL |Metal Dep                               |VIRTUAL      |NIPF        |FAB         |2025-08-31 14:09:35.35|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |HAWLEYC   |CS         |1        |0               |NULL      |
+|2025-02-23 07:18:25.25|05246|ENDURA307.METAL |Metal Dep                               |VIRTUAL      |NIPF        |FAB         |2025-02-23 07:18:25.25|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |HAWLEYC   |CS         |1        |0               |NULL      |
+|2025-05-19 22:04:29.29|05466|ECLIPSE302      |Metal Dep Ti/AlSi/Ti                    |METAL        |ECLIPSE     |FAB         |2025-05-19 22:04:29.29|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NPHAN     |CS         |1        |0               |NULL      |
+|2025-06-16 03:45:35.35|04849|ENDURA306.SIP   |ENDURA306.SIP                           |VIRTUAL      |NIPF        |FAB         |2025-06-16 03:45:35.35|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |KIMY      |CS         |1        |0               |NULL      |
+|2025-04-26 05:10:54.54|08038|WB89-R.WB89-R.B |70:1 BHF etch                           |VIRTUAL      |NIPF        |FAB         |2025-04-26 05:10:54.54|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |TEAMEB    |CS         |1        |5               |NULL      |
+|2025-06-09 21:32:08.08|99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-06-09 21:32:08.08|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-01-27 00:12:31.31|99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-01-27 00:12:31.31|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-02-01 17:37:19.19|05513|WTS8.54         |WTS FOR BACKGRIND                       |METAL        |WTS         |FAB         |2025-02-01 17:37:19.19|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |bnour     |CS         |1        |0               |NULL      |
+|2025-03-06 07:03:51.51|04002|WB183           |Wet Benhc PT Strip                      |WET_PROCESS  |WB MANUAL   |FAB         |2025-03-06 07:03:51.51|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |WINFIELDA |CS         |1        |0               |NULL      |
+|2025-08-31 14:09:35.35|05246|ENDURA307.SIP_4 |NULL                                    |VIRTUAL      |ENDURA      |FAB         |2025-08-31 14:09:35.35|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |HAWLEYC   |CS         |1        |0               |NULL      |
+|2025-02-23 11:10:37.37|08448|ENDURA4.PT      |Pt                                      |VIRTUAL      |NIPF        |FAB         |2025-02-23 11:10:37.37|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |JOKSNESS  |CS         |1        |1               |NULL      |
+|2025-05-18 00:18:03.03|05909|AME10.D         |Oxide Etch Process Chamber              |ETCH         |AME         |FAB         |2025-05-18 00:18:03.03|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |APERKINS  |CS         |1        |2               |NULL      |
+|2025-06-06 18:51:38.38|08038|WB89-R.B        |7:1 BHF BATH                            |WET_PROCESS  |N/A         |FAB         |2025-06-06 18:51:38.38|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |TEAMEB    |CS         |1        |5               |NULL      |
+|2025-05-19 16:38:17.17|05840|WB91            |AKrion GAMA Critical Clean Wet Bench    |WET_PROCESS  |WB AUTO     |FAB         |2025-05-19 16:38:17.17|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |SSHABIB   |CS         |1        |3               |NULL      |
+|2025-02-09 07:59:18.18|08448|ENDURA3.TI_TIN  |ENDURA3.TI and ENDURA3.TIN              |VIRTUAL      |NIPF        |FAB         |2025-02-09 07:59:18.18|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |JOKSNESS  |CS         |1        |0               |NULL      |
+|2025-02-23 16:27:51.51|99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-02-23 16:27:51.51|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-06-08 03:05:15.15|99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-06-08 03:05:15.15|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-03-27 09:56:26.26|05983|WTS8.46         |WAFER TRANSFER SYSTEM                   |CVD          |WTS         |FAB         |2025-03-27 09:56:26.26|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |DKRAGNESS |CS         |1        |0               |NULL      |
+|2025-01-14 21:46:22.22|05466|ENDURA306       |METAL DEP TI/TIN/CO/SIP                 |METAL        |ENDURA      |FAB         |2025-01-14 21:46:22.22|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NPHAN     |CS         |1        |1               |NULL      |
+|2025-04-25 07:44:26.26|05342|VTR304          |Vertical Diffusion Tube (THERMCO/SVG)   |DIFFUSION    |VDF         |FAB         |2025-04-25 07:44:26.26|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |MFROHLICH |CS         |1        |0               |NULL      |
+|2025-10-17 22:08:01.01|05375|ENDURA1.TIN     |Virtual Tool - TIN for Endura1          |VIRTUAL      |NIPF        |FAB         |2025-10-17 22:08:01.01|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |AKEY      |CS         |1        |1               |NULL      |
+|2025-01-18 16:41:05.05|99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-01-18 16:41:05.05|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-03-01 06:56:35.35|99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-03-01 06:56:35.35|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-05-20 19:26:17.17|04661|TEL307.COATER   |COAT                                    |VIRTUAL      |NIPF        |FAB         |2025-05-20 19:26:17.17|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |SOTHM     |CS         |1        |5               |NULL      |
+|2025-04-16 00:20:46.46|04849|ENDURA1         |METAL DEP TI/ALCU0.5%/TIN/PT            |METAL        |ENDURA      |FAB         |2025-04-16 00:20:46.46|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |KIMY      |CS         |1        |1               |NULL      |
+|2025-06-26 09:07:10.1 |99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-06-26 09:07:10.1 |1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-05-18 02:15:04.04|05375|ENDURA306.TI_TIN|ENDURA306.TI and ENDURA306.TIN          |VIRTUAL      |NIPF        |FAB         |2025-05-18 02:15:04.04|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |AKEY      |CS         |1        |0               |NULL      |
+|2025-08-31 14:25:05.05|04117|WB84-Z          |Wet Bench 10:1 HF                       |WET_PROCESS  |WB MANUAL   |FAB         |2025-08-31 14:25:05.05|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |MOHAMEDG  |CS         |1        |3               |NULL      |
+|2025-02-23 11:10:37.37|08448|ENDURA4.SIP_4   |Sip only use Chamber4                   |METAL        |ENDURA      |FAB         |2025-02-23 11:10:37.37|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |JOKSNESS  |CS         |1        |0               |NULL      |
+|2025-03-22 15:56:46.46|99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-03-22 15:56:46.46|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-05-20 21:08:31.31|05471|AME10.OXIDE     |NULL                                    |ETCH         |OXIDE ETCH  |FAB         |2025-05-20 21:08:31.31|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |JGAVITT   |CS         |1        |5               |NULL      |
+|2025-02-11 00:28:42.42|04849|ENDURA2.CO_TI   |CO_TI                                   |VIRTUAL      |NIPF        |FAB         |2025-02-11 00:28:42.42|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |KIMY      |CS         |1        |1               |NULL      |
+|2025-07-31 02:26:48.48|05479|ENDURA309.4_IMP |METAL DEP IMP                           |METAL        |ENDURA      |FAB         |2025-07-31 02:26:48.48|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |KKEOLA    |CS         |1        |0               |NULL      |
+|2025-03-08 13:39:59.59|99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-03-08 13:39:59.59|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-02-20 03:27:20.2 |99999|BAYMAX          |Omron Robot #6                          |PHOTO        |ROBOT       |FAB         |2025-02-20 03:27:20.2 |1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |NETVISION |CS         |1        |0               |NULL      |
+|2025-05-25 20:33:21.21|05471|WTS8.20         |Mercury1/3 WTS                          |ETCH         |WTS         |FAB         |2025-05-25 20:33:21.21|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |JGAVITT   |CS         |1        |4               |NULL      |
+|2025-01-26 21:36:53.53|04502|WB183           |Wet Benhc PT Strip                      |WET_PROCESS  |WB MANUAL   |FAB         |2025-01-26 21:36:53.53|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |MEADB     |CS         |1        |0               |NULL      |
+|2025-09-11 02:33:28.28|05717|VTR306.BOAT_A   |Boat A                                  |DIFFUSION    |VDF         |FAB         |2025-09-11 02:33:28.28|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |SCHHIM    |CS         |1        |0               |NULL      |
+|2025-01-09 12:00:48.48|03135|WB81.PHOS       |Virtual                                 |VIRTUAL      |NIPF        |FAB         |2025-01-09 12:00:48.48|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |HEMINGSEND|CS         |1        |5               |NULL      |
+|2025-01-25 18:35:41.41|04671|VIISTA301       |AMAT 900XP MEHD1 MED Current Implanter  |IMPLANT      |VIISTA      |FAB         |2025-01-25 18:35:41.41|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |PITMANM   |CS         |1        |0               |NULL      |
+|2025-06-08 08:13:40.4 |06060|WTS8.70         |Wafer transfer for WB205                |WET_PROCESS  |WTS         |FAB         |2025-06-08 08:13:40.4 |1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |HKRAMER   |CS         |1        |0               |NULL      |
+|2025-11-24 18:00:37.37|02831|WB84-Y          |Wet Bench 10:1 HF                       |WET_PROCESS  |WB MANUAL   |FAB         |2025-11-24 18:00:37.37|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |HUEBNERP  |CS         |1        |3               |NULL      |
+|2025-01-15 20:08:45.45|08038|WB85.BOE        |40_1                                    |VIRTUAL      |NIPF        |FAB         |2025-01-15 20:08:45.45|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |TEAMEB    |CS         |1        |0               |NULL      |
+|2025-03-15 16:46:15.15|05213|AME10.OXIDE     |NULL                                    |ETCH         |OXIDE ETCH  |FAB         |2025-03-15 16:46:15.15|1           |PROD_UP     |0           |            |0      |       |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |N            |NULL    |JENSENL   |CS         |1        |5               |NULL      |
++----------------------+-----+----------------+----------------------------------------+-------------+------------+------------+----------------------+------------+------------+------------+------------+-------+-------+------------+------------+------------+------------+------------+------------+-------------+--------+----------+-----------+---------+----------------+----------+
+only showing top 100 rows
+
+====================================================================================================
+ROWS ONLY IN FABRIC
+====================================================================================================
++----------------------+-----+-----------+--------------------------------------------------+-------------+------------+------------+----------------------+------------+------------+------------+------------+-------+-------+------------+------------+------------+------------+------------+------------+-------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+------------+-----------+---------+----------------+----------+
+|DATE_TIME_RUN         |EMPID|MACHINE    |MACHINE_DESCRIPTION                               |MACHINE_GROUP|MACHINE_TYPE|MACHINE_KIND|DATE_TIME             |STATUS1_CODE|STATUS1_NAME|STATUS2_CODE|STATUS2_NAME|PM_CODE|PM_NAME|REPAIR1_CODE|REPAIR1_NAME|REPAIR2_CODE|REPAIR2_NAME|REPAIR3_CODE|REPAIR3_NAME|IGNORE_RECORD|COMMENTS                                                                                                                                                                                                                                                                                |USERNAME    |COMMENTTYPE|LINEORDER|MACHINE_PRIORITY|REPAIRCODE|
++----------------------+-----+-----------+--------------------------------------------------+-------------+------------+------------+----------------------+------------+------------+------------+------------+-------+-------+------------+------------+------------+------------+------------+------------+-------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+------------+-----------+---------+----------------+----------+
+|2025-03-21 16:55:24.24|NULL |MRL18.3    |MRL FURNACE                                       |DIFFUSION    |FURNACE     |FAB         |2025-03-21 16:55:24.24|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |1               |NULL      |
+|2025-03-28 09:50:39.39|NULL |ENDURA309  |METAL DEP MOCVD SYSTEM                            |METAL        |ENDURA      |FAB         |2025-03-28 09:50:39.39|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |0               |NULL      |
+|2025-03-06 14:05:06.06|NULL |MRL22.2    |MRL Furnace                                       |DIFFUSION    |FURNACE     |FAB         |2025-03-06 14:05:06.06|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |1               |NULL      |
+|2025-03-04 12:18:19.19|NULL |LINK-303   |ASML100-302 & TEL311                              |PHOTO        |LINK        |FAB         |2025-03-04 12:18:19.19|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |0               |NULL      |
+|2025-03-26 15:34:24.24|NULL |PRODUCER303|PRODUCER303                                       |CVD          |Producer    |FAB         |2025-03-26 15:34:24.24|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |0               |NULL      |
+|2025-03-23 11:00:28.28|NULL |RTA301     |Rapid Thermal Anneal                              |CVD          |RTA         |FAB         |2025-03-23 11:00:28.28|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |0               |NULL      |
+|2025-03-09 13:11:00   |NULL |ENDURA2    |METAL DEP TI/TIN/CO/ALCU0.5%                      |METAL        |ENDURA      |FAB         |2025-03-09 13:11:00   |NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |1               |NULL      |
+|2025-03-06 11:14:16.16|NULL |RTA303     |Rapid Thermal Anneal                              |CVD          |RTA         |FAB         |2025-03-06 11:14:16.16|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |0               |NULL      |
+|2025-02-27 20:11:52.52|NULL |RTA310     |Rapid Thermal Anneal                              |CVD          |RTA         |FAB         |2025-02-27 20:11:52.52|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |2               |NULL      |
+|2025-03-20 01:00:44.44|NULL |ENDURA4    |METAL DEP TI/TIN/CO/SIP/PT                        |METAL        |ENDURA      |FAB         |2025-03-20 01:00:44.44|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |1               |NULL      |
+|2025-03-29 21:29:18.18|NULL |ENDURA308  |METAL DEP TI/ALCU0.5%/TIN                         |METAL        |ENDURA      |FAB         |2025-03-29 21:29:18.18|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from NO_QUAL_RESULT to SCHED_QUAL                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |0               |NULL      |
+|2025-03-30 12:46:57.57|NULL |RTA303     |Rapid Thermal Anneal                              |CVD          |RTA         |FAB         |2025-03-30 12:46:57.57|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from NO_QUAL_RESULT to SCHED_QUAL                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |0               |NULL      |
+|2025-03-31 04:29:52.52|NULL |RTA309     |Rapid thermal anneal                              |CVD          |RTA         |FAB         |2025-03-31 04:29:52.52|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from NO_QUAL_RESULT to SCHED_QUAL                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |0               |NULL      |
+|2025-03-22 01:59:34.34|NULL |ECLIPSE307 |Metal Dep  Ti/AlSi/Ti                             |METAL        |ECLIPSE     |FAB         |2025-03-22 01:59:34.34|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from NO_QUAL_RESULT to SCHED_QUAL                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |0               |NULL      |
+|2025-02-28 19:45:31.31|NULL |VTR306     |Vertical Diffusion Tube (THERMCO/SVG)             |DIFFUSION    |VDF         |FAB         |2025-02-28 19:45:31.31|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |checking                                                                                                                                                                                                                                                                                |CLILL       |CS         |1        |0               |NULL      |
+|2025-03-27 01:29:29.29|NULL |WB91       |AKrion GAMA Critical Clean Wet Bench              |WET_PROCESS  |WB AUTO     |FAB         |2025-03-27 01:29:29.29|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |checking                                                                                                                                                                                                                                                                                |SANDGRENS   |CS         |1        |3               |NULL      |
+|2025-02-27 14:30:43.43|NULL |RTA306     |Rapid Thermal Anneal                              |CVD          |RTA         |FAB         |2025-02-27 14:30:43.43|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |checking                                                                                                                                                                                                                                                                                |EANDERSEN   |CS         |1        |2               |NULL      |
+|2025-03-14 08:45:37.37|NULL |MRL18.3    |MRL FURNACE                                       |DIFFUSION    |FURNACE     |FAB         |2025-03-14 08:45:37.37|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |checking                                                                                                                                                                                                                                                                                |THOMASH     |CS         |1        |1               |NULL      |
+|2025-03-06 15:32:06.06|NULL |KLA8930-301|Patterned Wafer Broad Range Inspection System     |DEFECT       |INSPECTION  |FAB         |2025-03-06 15:32:06.06|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |ok                                                                                                                                                                                                                                                                                      |HAGENJ      |CS         |1        |0               |NULL      |
+|2025-03-24 14:36:56.56|NULL |ALPHA310   |TEL VERTICAL CVD POLY SYSTEM                      |LPCVD        |TEL POLY    |FAB         |2025-03-24 14:36:56.56|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |ok                                                                                                                                                                                                                                                                                      |KROUCHR     |CS         |1        |1               |NULL      |
+|2025-03-14 20:03:38.38|NULL |ASML100-319|Exposure Stepper 5500-100                         |PHOTO        |STEPPER     |FAB         |2025-03-14 20:03:38.38|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |ok                                                                                                                                                                                                                                                                                      |VDY         |CS         |1        |1               |NULL      |
+|2025-02-27 16:17:56.56|NULL |ECLIPSE308 |METAL_DEP TI/AL/CU0.5%/TI                         |METAL        |ECLIPSE     |FAB         |2025-02-27 16:17:56.56|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |rtp                                                                                                                                                                                                                                                                                     |JKING       |CS         |1        |0               |NULL      |
+|2025-03-18 05:29:08.08|NULL |KLASEM302  |SEM                                               |METROLOGY    |MEASUREMENT |FAB         |2025-03-18 05:29:08.08|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |rtp                                                                                                                                                                                                                                                                                     |EZELEKE     |CS         |1        |0               |NULL      |
+|2025-03-26 02:16:36.36|NULL |MRL22.3    |MRL Furnace                                       |DIFFUSION    |FURNACE     |FAB         |2025-03-26 02:16:36.36|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |                                                                                                                                                                                                                                                                                        |ADOUGLAS    |CS         |1        |1               |NULL      |
+|2025-03-25 00:35:39.39|NULL |LINK-307   |ASML200-314 & TEL318                              |PHOTO        |LINK        |FAB         |2025-03-25 00:35:39.39|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |done                                                                                                                                                                                                                                                                                    |DKRUEGER    |CS         |1        |0               |NULL      |
+|2025-03-22 22:49:46.46|NULL |ECLIPSE302 |Metal Dep Ti/AlSi/Ti                              |METAL        |ECLIPSE     |FAB         |2025-03-22 22:49:46.46|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |done                                                                                                                                                                                                                                                                                    |HARRIST     |CS         |1        |0               |NULL      |
+|2025-03-03 12:18:17.17|NULL |NK301      |Optical Critical Dimension (OCD) measurement tool.|METROLOGY    |MEASUREMENT |FAB         |2025-03-03 12:18:17.17|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |done                                                                                                                                                                                                                                                                                    |ABEEMER     |CS         |1        |0               |NULL      |
+|2025-03-19 10:01:36.36|NULL |F8_TEL308  |NOTCHFINDER AT TEL308 WORKSTATION                 |PHOTO        |NOTCH FINDER|FAB         |2025-03-19 10:01:36.36|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |done                                                                                                                                                                                                                                                                                    |DUVIOJ      |CS         |1        |0               |NULL      |
+|2025-02-26 19:59:48.48|NULL |LINK-16    |ASML700-16 & TEL322                               |PHOTO        |LINK        |FAB         |2025-02-26 19:59:48.48|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |OK to run tool                                                                                                                                                                                                                                                                          |DBUI        |CS         |1        |0               |NULL      |
+|2025-04-02 20:35:40.4 |NULL |LINK-16    |ASML700-16 & TEL322                               |PHOTO        |LINK        |FAB         |2025-04-02 20:35:40.4 |NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Eng lot                                                                                                                                                                                                                                                                                 |THOMPSONR   |CS         |1        |0               |NULL      |
+|2025-03-26 23:15:37.37|NULL |ATLAS305   |Film Thickness Metrology                          |METROLOGY    |MEASUREMENT |FAB         |2025-03-26 23:15:37.37|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |login and initialized tool. Restarted ml.                                                                                                                                                                                                                                               |NGOV        |CS         |1        |0               |NULL      |
+|2025-03-03 04:32:10.1 |NULL |ATLAS305   |Film Thickness Metrology                          |METROLOGY    |MEASUREMENT |FAB         |2025-03-03 04:32:10.1 |NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |qual passed                                                                                                                                                                                                                                                                             |EZELEKE     |CS         |1        |0               |NULL      |
+|2025-03-07 01:47:56.56|NULL |LINK-306   |ASML200-310 & TEL313                              |PHOTO        |LINK        |FAB         |2025-03-07 01:47:56.56|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |.                                                                                                                                                                                                                                                                                       |TLE         |CS         |1        |0               |NULL      |
+|2025-03-02 22:12:06.06|NULL |GC3055.L   |NF3 to VMB Novelus 316/PROD301/303/HDP301         |SUBFAB       |GasCabinet  |FAB         |2025-03-02 22:12:06.06|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |.                                                                                                                                                                                                                                                                                       |SOTHM       |CS         |1        |0               |NULL      |
+|2025-03-10 20:29:20.2 |NULL |ASML100-305|Exposure Stepper 5500-100                         |PHOTO        |STEPPER     |FAB         |2025-03-10 20:29:20.2 |NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |focus                                                                                                                                                                                                                                                                                   |DKRUEGER    |CS         |1        |0               |NULL      |
+|2025-03-22 18:26:04.04|NULL |LINK-305   |ASML200-311 & TEL312                              |PHOTO        |LINK        |FAB         |2025-03-22 18:26:04.04|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |focus                                                                                                                                                                                                                                                                                   |TLE         |CS         |1        |0               |NULL      |
+|2025-03-22 02:17:54.54|NULL |ASML100-319|Exposure Stepper 5500-100                         |PHOTO        |STEPPER     |FAB         |2025-03-22 02:17:54.54|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |focus                                                                                                                                                                                                                                                                                   |ABDIWMOHAMED|CS         |1        |1               |NULL      |
+|2025-04-03 18:27:23.23|NULL |F8_RTA307  |NOTCHFINDER AT RTA307 WORKSTATION                 |CVD          |NOTCH FINDER|FAB         |2025-04-03 18:27:23.23|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |starting                                                                                                                                                                                                                                                                                |JOHNSONHA   |CS         |1        |0               |NULL      |
+|2025-02-28 01:18:02.02|NULL |NOVEL325.A |NOVELLUS C2 IMD SPEED CHAMBER                     |CVD          |NOVELLUS C2 |FAB         |2025-02-28 01:18:02.02|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |first ran several more pec-less cleans, reseated heluim MFC, and test tool.. While running wafers the  1st wafer would error out due to heluim pressure very low.. Had to adjust pressure, ER and ran 2 different recipes 3k, and 6.5k with no issue.. Pressure is stable over to eng ..|JOHNSONHA   |CS         |1        |5               |NULL      |
+|2025-02-28 15:39:34.34|NULL |RTA301     |Rapid Thermal Anneal                              |CVD          |RTA         |FAB         |2025-02-28 15:39:34.34|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |completed monthly pm and replaced liner.. Tool is facility down for water work per EE ..                                                                                                                                                                                                |JOHNSONHA   |CS         |1        |0               |NULL      |
+|2025-04-05 02:33:54.54|NULL |RTA309     |Rapid thermal anneal                              |CVD          |RTA         |FAB         |2025-04-05 02:33:54.54|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |rebooted lotmover btp..                                                                                                                                                                                                                                                                 |JOHNSONHA   |CS         |1        |0               |NULL      |
+|2025-03-19 10:25:18.18|NULL |WB91       |AKrion GAMA Critical Clean Wet Bench              |WET_PROCESS  |WB AUTO     |FAB         |2025-03-19 10:25:18.18|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |GOI                                                                                                                                                                                                                                                                                     |BEYENEM     |CS         |1        |3               |NULL      |
+|2025-02-27 12:07:26.26|NULL |WB91       |AKrion GAMA Critical Clean Wet Bench              |WET_PROCESS  |WB AUTO     |FAB         |2025-02-27 12:07:26.26|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Done with eng epi tw clean and 7225AB70 ZAMBEZI clean. Started bath changeouts and tool can run product when all process mods. are ready.                                                                                                                                               |BAHTAA      |CS         |1        |3               |NULL      |
+|2025-04-11 07:56:39.39|NULL |EPI8       |Episilion 2000 Epitaxial Reactor                  |EPI          |EPI         |FAB         |2025-04-11 07:56:39.39|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Please Review Qual.                                                                                                                                                                                                                                                                     |HUSSEINMOHA |CS         |1        |1               |NULL      |
+|2025-03-21 06:08:22.22|NULL |EPI8       |Episilion 2000 Epitaxial Reactor                  |EPI          |EPI         |FAB         |2025-03-21 06:08:22.22|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |LLA Particle Map is clean. Over to Eng to determine next step.                                                                                                                                                                                                                          |NURN        |CS         |1        |1               |NULL      |
+|2025-04-09 06:53:04.04|NULL |EPI11      |Epsilon 2000+ Epitaxial Reactor                   |EPI          |EPI         |FAB         |2025-04-09 06:53:04.04|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |atmx pressure still failing high                                                                                                                                                                                                                                                        |VITEZM      |CS         |1        |0               |NULL      |
+|2025-04-11 07:12:58.58|NULL |ECLIPSE308 |METAL_DEP TI/AL/CU0.5%/TI                         |METAL        |ECLIPSE     |FAB         |2025-04-11 07:12:58.58|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Please run Temp monitor                                                                                                                                                                                                                                                                 |THILLV      |CS         |1        |0               |NULL      |
+|2025-03-25 16:38:36.36|NULL |ECLIPSE308 |METAL_DEP TI/AL/CU0.5%/TI                         |METAL        |ECLIPSE     |FAB         |2025-03-25 16:38:36.36|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |See previous comment and sput 2 was having sput 2 outter zone temp issues previously                                                                                                                                                                                                    |ROESNERA    |CS         |1        |0               |NULL      |
+|2025-03-10 11:55:01.01|NULL |TEL307     |Coat/Develop Track                                |PHOTO        |COAT/DEV    |FAB         |2025-03-10 11:55:01.01|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |1               |NULL      |
+|2025-03-17 09:02:01.01|NULL |LINK-303   |ASML100-302 & TEL311                              |PHOTO        |LINK        |FAB         |2025-03-17 09:02:01.01|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |0               |NULL      |
+|2025-03-16 18:50:59.59|NULL |SCRUB304   |DNS Scrub Track                                   |PHOTO        |SCRUB       |FAB         |2025-03-16 18:50:59.59|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |4               |NULL      |
+|2025-03-01 20:19:15.15|NULL |ALPHA308   |TEL VERTICAL CVD POLY SYSTEM                      |LPCVD        |TEL POLY    |FAB         |2025-03-01 20:19:15.15|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |1               |NULL      |
+|2025-03-21 11:34:24.24|NULL |NOVEL316   |GLASS DEP                                         |CVD          |NOVELLUS C1 |FAB         |2025-03-21 11:34:24.24|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |0               |NULL      |
+|2025-03-22 07:46:10.1 |NULL |RTA306     |Rapid Thermal Anneal                              |CVD          |RTA         |FAB         |2025-03-22 07:46:10.1 |NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |2               |NULL      |
+|2025-02-26 14:57:03.03|NULL |ENDURA5    |METAL DEP TI/ALCU0.5%/TIN                         |METAL        |ENDURA      |FAB         |2025-02-26 14:57:03.03|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |1               |NULL      |
+|2025-03-07 03:36:59.59|NULL |ENDURA5    |METAL DEP TI/ALCU0.5%/TIN                         |METAL        |ENDURA      |FAB         |2025-03-07 03:36:59.59|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |1               |NULL      |
+|2025-04-01 08:24:19.19|NULL |NOVEL313   |NOVELLUS CONCEPT1 200mm PECVD - RPC               |CVD          |NOVELLUS C1 |FAB         |2025-04-01 08:24:19.19|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |2               |NULL      |
+|2025-03-16 12:35:35.35|NULL |NOVEL316   |GLASS DEP                                         |CVD          |NOVELLUS C1 |FAB         |2025-03-16 12:35:35.35|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from NO_QUAL_RESULT to SCHED_QUAL                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |0               |NULL      |
+|2025-03-10 16:38:00   |NULL |ENDURA306  |METAL DEP TI/TIN/CO/SIP                           |METAL        |ENDURA      |FAB         |2025-03-10 16:38:00   |NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from NO_QUAL_RESULT to SCHED_QUAL                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |1               |NULL      |
+|2025-03-13 12:41:04.04|NULL |NOVEL23    |NOVEL23.GLASS                                     |CVD          |NOVELLUS C2 |FAB         |2025-03-13 12:41:04.04|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from NO_QUAL_RESULT to SCHED_QUAL                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |2               |NULL      |
+|2025-02-23 02:17:04.04|NULL |MRL22.2    |MRL Furnace                                       |DIFFUSION    |FURNACE     |FAB         |2025-02-23 02:17:04.04|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from NO_QUAL_RESULT to SCHED_QUAL                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |1               |NULL      |
+|2025-03-04 17:59:08.08|NULL |PEP312.A   |3510                                              |ETCH         |DRY STRIPPER|FAB         |2025-03-04 17:59:08.08|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |checking                                                                                                                                                                                                                                                                                |JGAVITT     |CS         |1        |5               |NULL      |
+|2025-03-06 10:26:05.05|NULL |VDF7       |TEL ALPHA 65 VERTICAL OXIDATION FURNACE           |DIFFUSION    |VDF         |FAB         |2025-03-06 10:26:05.05|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |checking                                                                                                                                                                                                                                                                                |THOMASH     |CS         |1        |1               |NULL      |
+|2025-03-22 08:21:05.05|NULL |PEP5.A     |3510 Ash                                          |ETCH         |DRY STRIPPER|FAB         |2025-03-22 08:21:05.05|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |ok                                                                                                                                                                                                                                                                                      |ADEGAGGA    |CS         |1        |2               |NULL      |
+|2025-04-01 08:20:12.12|NULL |MERCURY315 |Acid Processor Wet Strip                          |WET_PROCESS  |MERCURY     |FAB         |2025-04-01 08:20:12.12|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |ok                                                                                                                                                                                                                                                                                      |MAHAMUDM    |CS         |1        |0               |NULL      |
+|2025-03-05 02:20:57.57|NULL |LINK-304   |ASML200-307 & TEL309                              |PHOTO        |LINK        |FAB         |2025-03-05 02:20:57.57|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |ok                                                                                                                                                                                                                                                                                      |WAYENEW     |CS         |1        |0               |NULL      |
+|2025-02-25 22:43:24.24|NULL |LINK-305   |ASML200-311 & TEL312                              |PHOTO        |LINK        |FAB         |2025-02-25 22:43:24.24|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |ok                                                                                                                                                                                                                                                                                      |WAYENEW     |CS         |1        |0               |NULL      |
+|2025-03-27 19:32:11.11|NULL |MRL324.2   |MRL Furnace                                       |DIFFUSION    |FURNACE     |FAB         |2025-03-27 19:32:11.11|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |                                                                                                                                                                                                                                                                                        |PDAO        |CS         |1        |1               |NULL      |
+|2025-03-30 08:39:22.22|NULL |MRL16.1    |MRL FURNACE                                       |DIFFUSION    |FURNACE     |FAB         |2025-03-30 08:39:22.22|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |                                                                                                                                                                                                                                                                                        |LOSHEA      |CS         |1        |1               |NULL      |
+|2025-03-13 03:47:15.15|NULL |EPI9       |Episilion 2000 Epitaxial Reactor                  |EPI          |EPI         |FAB         |2025-03-13 03:47:15.15|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |                                                                                                                                                                                                                                                                                        |FBEKELE     |CS         |1        |1               |NULL      |
+|2025-03-26 22:06:36.36|NULL |MRL18.1    |MRL FURNACE                                       |DIFFUSION    |FURNACE     |FAB         |2025-03-26 22:06:36.36|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |                                                                                                                                                                                                                                                                                        |TYANG       |CS         |1        |1               |NULL      |
+|2025-03-04 11:55:15.15|NULL |GRIND2     |Disco Back Grinder DFG-82IF s/n GG0128            |METAL        |BACKGRIND   |FAB         |2025-03-04 11:55:15.15|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |done                                                                                                                                                                                                                                                                                    |SMITHR      |CS         |1        |2               |NULL      |
+|2025-02-23 09:46:10.1 |NULL |LINK-16    |ASML700-16 & TEL322                               |PHOTO        |LINK        |FAB         |2025-02-23 09:46:10.1 |NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |ok to run tool                                                                                                                                                                                                                                                                          |REARJ       |CS         |1        |0               |NULL      |
+|2025-02-23 17:07:32.32|NULL |LINK-16    |ASML700-16 & TEL322                               |PHOTO        |LINK        |FAB         |2025-02-23 17:07:32.32|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Gas fill completed.                                                                                                                                                                                                                                                                     |BURKHEADR   |CS         |1        |0               |NULL      |
+|2025-03-27 03:03:03.03|NULL |ATLAS305   |Film Thickness Metrology                          |METROLOGY    |MEASUREMENT |FAB         |2025-03-27 03:03:03.03|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |reference from chip failed                                                                                                                                                                                                                                                              |NGOV        |CS         |1        |0               |NULL      |
+|2025-03-22 00:19:40.4 |NULL |LINK-304   |ASML200-307 & TEL309                              |PHOTO        |LINK        |FAB         |2025-03-22 00:19:40.4 |NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |.                                                                                                                                                                                                                                                                                       |TLE         |CS         |1        |0               |NULL      |
+|2025-03-29 01:18:52.52|NULL |IVS304     |Overlay Metrology                                 |METROLOGY    |MEASUREMENT |FAB         |2025-03-29 01:18:52.52|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |.                                                                                                                                                                                                                                                                                       |TLE         |CS         |1        |0               |NULL      |
+|2025-03-19 01:26:38.38|NULL |NOVEL325.B |NOVELLUS C2 IMD SPEED CHAMBER                     |CVD          |NOVELLUS C2 |FAB         |2025-03-19 01:26:38.38|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |.                                                                                                                                                                                                                                                                                       |GERMAINEM   |CS         |1        |5               |NULL      |
+|2025-03-07 11:41:33.33|NULL |VTR305     |Vertical Diffusion Tube (THERMCO/SVG)             |DIFFUSION    |VDF         |FAB         |2025-03-07 11:41:33.33|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |.                                                                                                                                                                                                                                                                                       |TRANNG      |CS         |1        |0               |NULL      |
+|2025-02-27 00:33:44.44|NULL |ASML100-305|Exposure Stepper 5500-100                         |PHOTO        |STEPPER     |FAB         |2025-02-27 00:33:44.44|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |focus                                                                                                                                                                                                                                                                                   |DKRUEGER    |CS         |1        |0               |NULL      |
+|2025-03-14 19:02:26.26|NULL |LINK-303   |ASML100-302 & TEL311                              |PHOTO        |LINK        |FAB         |2025-03-14 19:02:26.26|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |focus                                                                                                                                                                                                                                                                                   |TLE         |CS         |1        |0               |NULL      |
+|2025-02-22 21:50:38.38|NULL |ASML100-308|Exposure Stepper 5500-100                         |PHOTO        |STEPPER     |FAB         |2025-02-22 21:50:38.38|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |focus                                                                                                                                                                                                                                                                                   |ABDIWMOHAMED|CS         |1        |0               |NULL      |
+|2025-03-18 18:40:27.27|NULL |LINK-308   |ASML200-313 & TEL 320                             |PHOTO        |LINK        |FAB         |2025-03-18 18:40:27.27|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |focus                                                                                                                                                                                                                                                                                   |CHABOTV     |CS         |1        |0               |NULL      |
+|2025-03-20 01:03:59.59|NULL |EPI8       |Episilion 2000 Epitaxial Reactor                  |EPI          |EPI         |FAB         |2025-03-20 01:03:59.59|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |qual                                                                                                                                                                                                                                                                                    |CUNNINGHAME |CS         |1        |1               |NULL      |
+|2025-03-13 07:02:33.33|NULL |EPI8       |Episilion 2000 Epitaxial Reactor                  |EPI          |EPI         |FAB         |2025-03-13 07:02:33.33|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |To ENG to remove wafers. Return to Maint when complete.                                                                                                                                                                                                                                 |BURNS_T-ASM |CS         |1        |1               |NULL      |
+|2025-03-25 01:20:49.49|NULL |EPI11      |Epsilon 2000+ Epitaxial Reactor                   |EPI          |EPI         |FAB         |2025-03-25 01:20:49.49|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |reviewing                                                                                                                                                                                                                                                                               |OLIVERT     |CS         |1        |0               |NULL      |
+|2025-03-14 22:57:42.42|NULL |ECLIPSE308 |METAL_DEP TI/AL/CU0.5%/TI                         |METAL        |ECLIPSE     |FAB         |2025-03-14 22:57:42.42|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |eng test                                                                                                                                                                                                                                                                                |PARENTEAUT  |CS         |1        |0               |NULL      |
+|2025-03-03 16:14:58.58|NULL |EPI11      |Epsilon 2000+ Epitaxial Reactor                   |EPI          |EPI         |FAB         |2025-03-03 16:14:58.58|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Returning EPI11 to INSTL_DOWN status. Wait for further instructions.                                                                                                                                                                                                                    |MADISEND    |CS         |1        |0               |NULL      |
+|2025-02-23 11:17:01.01|NULL |MERCURY317 |MERC317 CoSi tool                                 |WET_PROCESS  |MERCURY     |FAB         |2025-02-23 11:17:01.01|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |0               |NULL      |
+|2025-03-23 20:52:12.12|NULL |ALPHA318   |TEL ALPHA-8SEi Flat Poly                          |LPCVD        |TEL POLY    |FAB         |2025-03-23 20:52:12.12|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |0               |NULL      |
+|2025-03-28 06:14:59.59|NULL |NOVEL309   |PECVD                                             |CVD          |NOVELLUS C1 |FAB         |2025-03-28 06:14:59.59|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |0               |NULL      |
+|2025-03-19 04:51:32.32|NULL |SCRUB304   |DNS Scrub Track                                   |PHOTO        |SCRUB       |FAB         |2025-03-19 04:51:32.32|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |4               |NULL      |
+|2025-03-23 01:26:54.54|NULL |ALPHA804   |TEL VERTICAL CVD POLY SYSTEM                      |LPCVD        |TEL POLY    |FAB         |2025-03-23 01:26:54.54|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |2               |NULL      |
+|2025-03-24 10:48:18.18|NULL |LINK-305   |ASML200-311 & TEL312                              |PHOTO        |LINK        |FAB         |2025-03-24 10:48:18.18|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |0               |NULL      |
+|2025-03-13 20:24:50.5 |NULL |ENDURA2    |METAL DEP TI/TIN/CO/ALCU0.5%                      |METAL        |ENDURA      |FAB         |2025-03-13 20:24:50.5 |NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |1               |NULL      |
+|2025-03-04 15:34:38.38|NULL |RTA310     |Rapid Thermal Anneal                              |CVD          |RTA         |FAB         |2025-03-04 15:34:38.38|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |2               |NULL      |
+|2025-03-14 21:42:44.44|NULL |RTA310     |Rapid Thermal Anneal                              |CVD          |RTA         |FAB         |2025-03-14 21:42:44.44|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |2               |NULL      |
+|2025-02-26 03:16:01.01|NULL |ALPHA310   |TEL VERTICAL CVD POLY SYSTEM                      |LPCVD        |TEL POLY    |FAB         |2025-02-26 03:16:01.01|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |1               |NULL      |
+|2025-02-24 13:59:48.48|NULL |NOVEL315   |NOVELLUS CONCEPT1                                 |CVD          |NOVELLUS C1 |FAB         |2025-02-24 13:59:48.48|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |2               |NULL      |
+|2025-02-25 12:03:57.57|NULL |NOVEL315   |NOVELLUS CONCEPT1                                 |CVD          |NOVELLUS C1 |FAB         |2025-02-25 12:03:57.57|NULL        |NULL        |NULL        |NULL        |NULL   |NULL   |NULL        |NULL        |NULL        |NULL        |NULL        |NULL        |NULL         |Auto-change from SCHED_QUAL to NO_QUAL_RESULT                                                                                                                                                                                                                                           |SYSTM       |CS         |1        |2               |NULL      |
++----------------------+-----+-----------+--------------------------------------------------+-------------+------------+------------+----------------------+------------+------------+------------+------------+-------+-------+------------+------------+------------+------------+------------+------------+-------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+------------+-----------+---------+----------------+----------+
+only showing top 100 rows
+
+  
