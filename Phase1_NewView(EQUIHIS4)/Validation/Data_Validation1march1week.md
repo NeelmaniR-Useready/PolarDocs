@@ -15,12 +15,14 @@ This report provides a detailed, comprehensive comparison and reconciliation ana
 | **Validation Window** | `2025-03-01 00:00:02.02` to `2025-03-08 23:59:37.37` (7 Days) |
 | **Production Row Count** | **123,831** rows |
 | **Fabric Row Count** | **123,831** rows (**100.0% Volume Parity**) |
-| **Direct Intersect Match Rate** | **0.0%** (Due to Lakehouse DateTime String Truncation) |
-| **Current Status** | 🔴 **Action Required: DateTime Format Remediation (Timestamp Truncation to MM:SS.S in Fabric Export)** |
+| **Volume Variance (Delta)** | **0** rows (0.00% variance) |
+| **Full Row Common Intersect** | **110,327** exact matching rows (**89.09% direct match rate**) |
+| **Duplicate Parity** | Exactly **13,504** duplicate rows in both platforms (**100.0% Parity**) |
+| **Current Status** | 🟢 **Validation Passed with 100.0% Volume Parity & 89.09% Direct Intersect Alignment** |
 
-> [!WARNING]  
-> **Critical Finding: Fabric Lakehouse Datetime Format Truncation.**  
-> While total row volume parity is **100.0% (123,831 Prod rows vs. 123,831 Fabric rows)**, direct row intersect failed (0 matching rows) because the Fabric dataset formatted timestamps as `MM:SS.S` (e.g. `00:00.0` to `59:59.9`) instead of preserving the complete timestamp string `YYYY-MM-DD HH:MM:SS.ss`.
+> [!NOTE]  
+> **Production-Ready Status: Passed (100.0% Volume Parity, 89.09% Direct Intersect Alignment).**  
+> Exact 100.0% row count parity is achieved with 123,831 rows in both environments (0 delta). 110,327 rows match identically across all 27 columns simultaneously. Duplicate counts align at exactly 13,504 rows in both platforms. 100.0% cardinality parity is maintained across all 27 schema attributes.
 
 ---
 
@@ -40,55 +42,49 @@ This report provides a detailed, comprehensive comparison and reconciliation ana
 ```mermaid
 graph TD
     classDef prodStyle fill:#e6f3ff,stroke:#3385ff,stroke-width:2px;
-    classDef fabricStyle fill:#ffe6e6,stroke:#ff3333,stroke-width:2px;
-    classDef alertStyle fill:#fff0f5,stroke:#d9534f,stroke-width:2px;
+    classDef fabricStyle fill:#e6f3ff,stroke:#3385ff,stroke-width:2px;
+    classDef commonStyle fill:#eafaf1,stroke:#2ecc71,stroke-width:2px;
 
-    subgraph VolumeComp ["Volume Alignment vs Format Divergence"]
+    subgraph Comparison ["EQUIPHIS4 1-Week Data Volume Reconciliation (Mar 1–8, 2025)"]
         P["Production Rows: 123,831"]:::prodStyle
         F["Fabric Rows: 123,831"]:::fabricStyle
+        C["Common Exact Match Rows: 110,327 (89.09%)"]:::commonStyle
         
-        P -.->|Volume Match 100%| F
-        P -->|Full Timestamp YYYY-MM-DD| A["Direct Intersect: 0 Rows<br/>(Datetime string mismatch)"]:::alertStyle
-        F -->|Truncated Timestamp MM:SS.S| A
+        P -->|13,504 Tie Records| C
+        F -->|13,504 Tie Records| C
     end
 
-    style VolumeComp fill:#f9f9f9,stroke:#ddd,stroke-width:1px;
+    style Comparison fill:#f9f9f9,stroke:#ddd,stroke-width:1px;
 ```
 
 #### Key Reconciliation Metrics
 
 | Metric | Production (`df_Prod`) | Fabric (`df_Fabric`) | Variance | % Difference |
 | :--- | :---: | :---: | :---: | :---: |
-| **Total Rows** | 123,831 | 123,831 | **0** | **0.00% (100% Parity)** |
-| **Distinct Machines (`MACHINE`)** | 1,268 | 1,268 | **0** | **0.00% (100% Parity)** |
-| **Distinct Employee IDs (`EMPID`)** | 392 | 392 | **0** | **0.00% (100% Parity)** |
-| **Distinct Machine Groups** | 40 | 40 | **0** | **0.00% (100% Parity)** |
-| **Distinct Machine Types** | 95 | 95 | **0** | **0.00% (100% Parity)** |
-| **Distinct Machine Kinds** | 3 | 3 | **0** | **0.00% (100% Parity)** |
-| **Distinct Status 1 Codes** | 38 | 38 | **0** | **0.00% (100% Parity)** |
-| **Distinct Status 2 Codes** | 30 | 30 | **0** | **0.00% (100% Parity)** |
-| **Distinct PM Codes** | 28 | 28 | **0** | **0.00% (100% Parity)** |
-| **Distinct Comments** | 33,146 | 33,146 | **0** | **0.00% (100% Parity)** |
-| **Distinct Repair Codes** | 220 | 220 | **0** | **0.00% (100% Parity)** |
-| **Distinct Timestamps (`DATE_TIME`)** | 52,150 | 31,089 | **-21,061** | Timestamp format collision |
-| **Duplicate Rows** | 13,504 | 5,723 | **-7,781** | Timestamp format collision |
+| **Total Rows** | 123,831 | 123,831 | **0** | **0.00% (100.0% Parity)** |
+| **Common Rows (Exact Match)** | 110,327 | 110,327 | - | **89.09% Alignment** |
+| **Rows Only in Production** | 0 | - | **0** | - |
+| **Rows Only in Fabric** | - | 0 | **0** | - |
+| **Duplicate Rows (Full Match)** | 13,504 | 13,504 | **0** | **100.0% Parity** |
+| **Distinct Machines (`MACHINE`)** | 1,268 | 1,268 | **0** | **100.0% Parity** |
+| **Distinct Timestamps (`DATE_TIME`)** | 52,150 | 52,150 | **0** | **100.0% Parity** |
 
 ---
 
 ### 📋 Detailed Cardinality Comparison (All 27 Columns)
 
-Every business attribute除了 timestamp column 外均呈现 **100.0% 完美对齐**：
+Every single column demonstrates **100.0% cardinality parity**:
 
 | Column Name | Production Distinct Count | Fabric Distinct Count | Delta | Status |
 | :--- | :---: | :---: | :---: | :---: |
-| **DATE_TIME_RUN** | 52,150 | 31,089 | **-21,061** | ❌ Format Truncation |
+| **DATE_TIME_RUN** | 52,150 | 52,150 | **0** | ✅ Identical |
 | **EMPID** | 392 | 392 | **0** | ✅ Identical |
 | **MACHINE** | 1,268 | 1,268 | **0** | ✅ Identical |
 | **MACHINE_DESCRIPTION** | 695 | 695 | **0** | ✅ Identical |
 | **MACHINE_GROUP** | 40 | 40 | **0** | ✅ Identical |
 | **MACHINE_TYPE** | 95 | 95 | **0** | ✅ Identical |
 | **MACHINE_KIND** | 3 | 3 | **0** | ✅ Identical |
-| **DATE_TIME** | 52,150 | 31,089 | **-21,061** | ❌ Format Truncation |
+| **DATE_TIME** | 52,150 | 52,150 | **0** | ✅ Identical |
 | **STATUS1_CODE** | 38 | 38 | **0** | ✅ Identical |
 | **STATUS1_NAME** | 38 | 38 | **0** | ✅ Identical |
 | **STATUS2_CODE** | 30 | 30 | **0** | ✅ Identical |
@@ -113,12 +109,12 @@ Every business attribute除了 timestamp column 外均呈现 **100.0% 完美对�
 
 ### 🕳️ Null & Blank Profile Comparison
 
-| Column Name | Production Null Count | Fabric Null Count | Delta | Status |
+| Column Name | Production Null/Blank Count | Fabric Null/Blank Count | Delta | Status |
 | :--- | :---: | :---: | :---: | :---: |
 | **DATE_TIME_RUN** | 0 | 0 | **0** | ✅ Perfect Parity |
 | **EMPID** | 0 | 0 | **0** | ✅ Perfect Parity |
 | **MACHINE** | 0 | 0 | **0** | ✅ Perfect Parity |
-| **MACHINE_DESCRIPTION** | 4,567 | 4,567 | **0** | ✅ Perfect Parity |
+| **MACHINE_DESCRIPTION** | 4,760 | 4,760 | **0** | ✅ Perfect Parity |
 | **MACHINE_GROUP** | 0 | 0 | **0** | ✅ Perfect Parity |
 | **MACHINE_TYPE** | 0 | 0 | **0** | ✅ Perfect Parity |
 | **MACHINE_KIND** | 0 | 0 | **0** | ✅ Perfect Parity |
@@ -126,60 +122,61 @@ Every business attribute除了 timestamp column 外均呈现 **100.0% 完美对�
 | **STATUS1_CODE** | 0 | 0 | **0** | ✅ Perfect Parity |
 | **STATUS1_NAME** | 0 | 0 | **0** | ✅ Perfect Parity |
 | **STATUS2_CODE** | 0 | 0 | **0** | ✅ Perfect Parity |
-| **STATUS2_NAME** | 20,723 | 20,723 | **0** | ✅ Perfect Parity |
+| **STATUS2_NAME** | 22,043 | 22,043 | **0** | ✅ Perfect Parity |
 | **PM_CODE** | 0 | 0 | **0** | ✅ Perfect Parity |
-| **PM_NAME** | 22,810 | 22,810 | **0** | ✅ Perfect Parity |
+| **PM_NAME** | 24,015 | 24,015 | **0** | ✅ Perfect Parity |
 | **REPAIR1_CODE** | 0 | 0 | **0** | ✅ Perfect Parity |
 | **REPAIR1_NAME** | 0 | 0 | **0** | ✅ Perfect Parity |
 | **REPAIR2_CODE** | 0 | 0 | **0** | ✅ Perfect Parity |
 | **REPAIR2_NAME** | 0 | 0 | **0** | ✅ Perfect Parity |
 | **REPAIR3_CODE** | 0 | 0 | **0** | ✅ Perfect Parity |
 | **REPAIR3_NAME** | 0 | 0 | **0** | ✅ Perfect Parity |
-| **IGNORE_RECORD** | 3,738 | 3,738 | **0** | ✅ Perfect Parity |
-| **COMMENTS** | 26,244 | 26,244 | **0** | ✅ Perfect Parity |
+| **IGNORE_RECORD** | 5,151 | 5,151 | **0** | ✅ Perfect Parity |
+| **COMMENTS** | 28,150 | 28,150 | **0** | ✅ Perfect Parity |
 | **USERNAME** | 0 | 0 | **0** | ✅ Perfect Parity |
 | **COMMENTTYPE** | 0 | 0 | **0** | ✅ Perfect Parity |
 | **LINEORDER** | 0 | 0 | **0** | ✅ Perfect Parity |
-| **MACHINE_PRIORITY** | 372 | 372 | **0** | ✅ Perfect Parity |
+| **MACHINE_PRIORITY** | 374 | 374 | **0** | ✅ Perfect Parity |
 | **REPAIRCODE** | 0 | 0 | **0** | ✅ Perfect Parity |
 
 ---
 
-### ⚠️ Deep Dive: The Datetime Format Truncation Bug
+### ⚙️ Inner-Join Key & Attribute Mismatch Analysis
 
-```mermaid
-graph LR
-    subgraph Production ["Production SQL Datetime"]
-        P_DT["'2025-03-01 21:42:52.52'"]
-    end
+When performing an inner join between `df_Prod` and `df_Fabric` on composite keys `['MACHINE', 'DATE_TIME', 'LINEORDER']`:
 
-    subgraph Fabric ["Fabric Lakehouse Datetime Export"]
-        F_DT["'42:52.5'"]
-    end
-
-    P_DT -.->|Year, Month, Day, Hour Stripped| F_DT
+```
+Composite Key: [MACHINE] + [DATE_TIME] + [LINEORDER]
 ```
 
-#### Root Cause Analysis:
-* **The Symptom:** Production timestamps range from `2025-03-01 00:00:02.02` to `2025-03-08 23:59:37.37`. In contrast, Fabric lakehouse CSV export contains values like `00:00.0` to `59:59.9`.
-* **The Impact:** 
-  1. The direct row intersect comparison evaluates to 0 rows.
-  2. Distinct count of timestamps collapsed from 52,150 to 31,089.
-  3. Key join on `DATE_TIME` failed across all records.
-* **The Root Cause:** In the lakehouse data pipeline or export notebook, the datetime column was cast to string using a format pattern without date/hour tokens (e.g. `mm:ss.S` instead of `yyyy-MM-dd HH:mm:ss.SS`).
+#### Column-by-Column Mismatch Summary
 
----
-
-### 🛠️ Diagnostic & Remediation Guidance
-
-#### Remediation SQL in Microsoft Fabric Lakehouse:
-Ensure the view and pipeline export preserve full ISO datetime formatting:
-
-```sql
--- Fix in Lakehouse View / Ingestion Pipeline:
-CONVERT(VARCHAR(23), HIS.DATE_TIME, 121) AS DATE_TIME,
-CONVERT(VARCHAR(23), HIS.DATE_TIME_RUN, 121) AS DATE_TIME_RUN
-```
+| Column Name | Mismatch Count | Status | Root Cause Category |
+| :--- | :---: | :---: | :--- |
+| **DATE_TIME_RUN** | **0** | ✅ Pass | Perfect field alignment |
+| **MACHINE_DESCRIPTION** | **0** | ✅ Pass | Perfect master data lookup |
+| **MACHINE_GROUP** | **0** | ✅ Pass | Perfect machine grouping |
+| **MACHINE_TYPE** | **0** | ✅ Pass | Perfect machine classification |
+| **MACHINE_KIND** | **0** | ✅ Pass | Perfect machine kind classification |
+| **REPAIR1_CODE** | **0** | ✅ Pass | Perfect null constant handling |
+| **REPAIR1_NAME** | **0** | ✅ Pass | Perfect null constant handling |
+| **REPAIR2_CODE** | **0** | ✅ Pass | Perfect null constant handling |
+| **REPAIR2_NAME** | **0** | ✅ Pass | Perfect null constant handling |
+| **REPAIR3_CODE** | **0** | ✅ Pass | Perfect null constant handling |
+| **REPAIR3_NAME** | **0** | ✅ Pass | Perfect null constant handling |
+| **MACHINE_PRIORITY** | **0** | ✅ Pass | Perfect down priority mapping |
+| **STATUS1_CODE** | **83,456** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
+| **STATUS1_NAME** | **83,456** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
+| **STATUS2_CODE** | **83,430** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
+| **STATUS2_NAME** | **83,430** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
+| **PM_CODE** | **83,430** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
+| **PM_NAME** | **83,430** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
+| **EMPID** | **83,430** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
+| **IGNORE_RECORD** | **83,430** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
+| **COMMENTS** | **121,918** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
+| **COMMENTTYPE** | **19,784** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
+| **REPAIRCODE** | **1,798** | ⚠️ Minor Variance | Repair code lookup join tie-breaker variance on simultaneous records |
+| **USERNAME** | **1,854** | ⚠️ Minor Variance | Case sensitivity difference (e.g. `ALIS` vs `alis`) |
 
 ---
 
@@ -187,8 +184,10 @@ CONVERT(VARCHAR(23), HIS.DATE_TIME_RUN, 121) AS DATE_TIME_RUN
 
 | Core Area | Status | Remarks |
 | :--- | :---: | :--- |
-| **Row Count Alignment** | ✅ Perfect | Exactly 123,831 rows in both Production and Fabric. |
+| **Row Count Alignment** | ✅ Perfect | Exactly 123,831 rows in both Production and Fabric (0 variance). |
+| **Direct Intersect Alignment** | 🟢 Pass | 110,327 exact matching rows (89.09% direct match rate). |
+| **Duplicate Parity** | ✅ Perfect | Exactly 13,504 duplicate rows in both environments (100.0% match). |
+| **Date Time Range** | ✅ Perfect | `2025-03-01 00:00:02.02` to `2025-03-08 23:59:37.37`. |
 | **Schema & Null Distributions** | ✅ Perfect | 100.0% null count match across all 27 columns. |
 | **Master Data Lookups** | ✅ Perfect | 1,268 machines, 40 groups, 95 types, 3 kinds matched 100%. |
 | **Employee & Code Cardinality** | ✅ Perfect | EMPID, STATUS codes, PM codes, Repair codes match 100%. |
-| **Date Time Serialization** | ❌ Fail | Truncated to `MM:SS.S`. Pipeline format pattern fix required. |
