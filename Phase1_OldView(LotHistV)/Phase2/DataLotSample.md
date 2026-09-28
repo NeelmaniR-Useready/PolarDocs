@@ -1,23 +1,26 @@
-LOT,DATE_TIME,HISTORDER,TRANS,OPER,MASK_LVL,OPERDESC,OPERLONGDESC,MACHINE,USERNAME,HIST_REC,HISTCODE,COMMAND,SHORTREPORT,VIEWFLAG,Is_Person,IS_DUPLICATE,EMPID
-6554A0A7,2026-07-26 11:17:27.27,12,MASK/REV,90101,0,SCRIBE,000.SCRIBE,,johnsonr,ADD LVL:015  MSK:60609801  REV:A  SET: ,MR,LTCR,Y,E,1,1,4518
-6554A0A7,2026-07-26 11:17:27.27,12,MASK/REV,90101,0,SCRIBE,000.SCRIBE,,johnsonr,ADD LVL:046  MSK:60609808  REV:A  SET: ,MR,LTCR,Y,E,1,1,4518
-6554A0A7,2026-07-26 11:17:27.27,8,HOT STATUS,90101,0,SCRIBE,000.SCRIBE,,johnsonr,HOTFLAG= 4  OLD= ,HT,LTCR,Y,E,1,1,4518
-6554A0A7,2026-07-26 11:17:27.27,9,SALES ORDR,90101,0,SCRIBE,000.SCRIBE,,johnsonr,SALES ORDER:BNKORD0092 LINE:4691 ,SO,LTCR,Y,I,1,1,4518
-6554A0A7,2026-07-26 11:17:27.27,12,MASK/REV,90101,0,SCRIBE,000.SCRIBE,,johnsonr,ADD LVL:078  MSK:60609811  REV:A  SET: ,MR,LTCR,Y,E,1,1,4518
-6554A0A7,2026-07-26 11:17:27.27,1,PARAM1 FLG,90101,0,SCRIBE,000.SCRIBE,,johnsonr,1ST PARAMETRIC FLAG:ON,P1,LTCR,Y,E,1,1,4518
-6554A0A7,2026-07-26 11:17:27.27,6,ROUTE,90101,0,SCRIBE,000.SCRIBE,,johnsonr,ROUTE:SBH2-01A  ,RT,LTCR,Y,E,1,1,4518
-6554A0A7,2026-07-26 11:17:27.27,10,CREATE LOT,90101,0,SCRIBE,000.SCRIBE,,johnsonr,QTY: 25 SCRIBED:F31082,CR,LTCR,Y,E,1,1,4518
-6554A0A7,2026-07-26 11:17:27.27,12,MASK/REV,90101,0,SCRIBE,000.SCRIBE,,johnsonr,ADD LVL:075  MSK:60609810  REV:A  SET: ,MR,LTCR,Y,E,1,1,4518
-6554A0A7,2026-07-26 11:17:27.27,12,MASK/REV,90101,0,SCRIBE,000.SCRIBE,,johnsonr,ADD LVL:030  MSK:60609803  REV:A  SET: ,MR,LTCR,Y,E,1,1,4518
-6554A0A7,2026-07-26 11:17:27.27,11,RAWWFR PRT,90101,0,SCRIBE,000.SCRIBE,,johnsonr,RAW WAFER NUMBER:61332900 Rev: F,WF,LTCR,Y,E,1,1,4518
-6554A0A7,2026-07-26 11:17:27.27,3,OWNERCODE,90101,0,SCRIBE,000.SCRIBE,,johnsonr,OWNER:PROD,OW,LTCR,Y,E,1,1,4518
-6554A0A7,2026-07-26 11:17:27.27,12,MASK/REV,90101,0,SCRIBE,000.SCRIBE,,johnsonr,ADD LVL:038  MSK:60609806  REV:A  SET: ,MR,LTCR,Y,E,1,1,4518
-6554A0A7,2026-07-26 11:17:27.27,12,MASK/REV,90101,0,SCRIBE,000.SCRIBE,,johnsonr,ADD LVL:043  MSK:60609807  REV:A  SET: ,MR,LTCR,Y,E,1,1,4518
-6554A0A7,2026-07-26 11:17:27.27,7,VALUEADDED,90101,0,SCRIBE,000.SCRIBE,,johnsonr,NEW VALUEADDED:NORMAL,VA,LTCR,Y,I,1,1,4518
-6554A0A7,2026-07-26 11:17:27.27,12,COMMENT,90101,0,SCRIBE,000.SCRIBE,,johnsonr,Wfrs added to WaferSortData.,CM,LTCR,Y,E,1,1,4518
-6554A0A7,2026-07-26 11:17:27.27,5,PART NUM,90101,0,SCRIBE,000.SCRIBE,,johnsonr,PART:C_MG5913AP-FE,PT,LTCR,Y,E,1,1,4518
-6554A0A7,2026-07-26 11:17:27.27,4,TARGETPRTn,90101,0,SCRIBE,000.SCRIBE,,johnsonr,NEW TARGET PART:MG5913AP-FE,TN,LTCR,Y,E,1,1,4518
-6554A0A7,2026-07-26 11:17:27.27,12,MASK/REV,90101,0,SCRIBE,000.SCRIBE,,johnsonr,ADD LVL:029  MSK:60609804  REV:A  SET: ,MR,LTCR,Y,E,1,1,4518
+
+| LOT      | DATE_TIME              | HISTORDER | TRANS      |  OPER | MASK_LVL | OPERDESC | OPERLONGDESC | MACHINE | USERNAME | HIST_REC                            | HISTCODE | COMMAND | SHORTREPORT | VIEWFLAG | Is_Person | IS_DUPLICATE | EMPID |
+| -------- | ---------------------- | --------: | ---------- | ----: | -------: | -------- | ------------ | ------- | -------- | ----------------------------------- | -------- | ------- | ----------- | -------- | --------: | -----------: | ----: |
+| 6554A0A7 | 2026-07-26 11:17:27.27 |        12 | MASK/REV   | 90101 |        0 | SCRIBE   | 000.SCRIBE   |         | johnsonr | ADD LVL:015 MSK:60609801 REV:A SET: | MR       | LTCR    | Y           | E        |         1 |            1 |  4518 |
+| 6554A0A7 | 2026-07-26 11:17:27.27 |        12 | MASK/REV   | 90101 |        0 | SCRIBE   | 000.SCRIBE   |         | johnsonr | ADD LVL:046 MSK:60609808 REV:A SET: | MR       | LTCR    | Y           | E        |         1 |            1 |  4518 |
+| 6554A0A7 | 2026-07-26 11:17:27.27 |         8 | HOT STATUS | 90101 |        0 | SCRIBE   | 000.SCRIBE   |         | johnsonr | HOTFLAG= 4 OLD=                     | HT       | LTCR    | Y           | E        |         1 |            1 |  4518 |
+| 6554A0A7 | 2026-07-26 11:17:27.27 |         9 | SALES ORDR | 90101 |        0 | SCRIBE   | 000.SCRIBE   |         | johnsonr | SALES ORDER:BNKORD0092 LINE:4691    | SO       | LTCR    | Y           | I        |         1 |            1 |  4518 |
+| 6554A0A7 | 2026-07-26 11:17:27.27 |        12 | MASK/REV   | 90101 |        0 | SCRIBE   | 000.SCRIBE   |         | johnsonr | ADD LVL:078 MSK:60609811 REV:A SET: | MR       | LTCR    | Y           | E        |         1 |            1 |  4518 |
+| 6554A0A7 | 2026-07-26 11:17:27.27 |         1 | PARAM1 FLG | 90101 |        0 | SCRIBE   | 000.SCRIBE   |         | johnsonr | 1ST PARAMETRIC FLAG:ON              | P1       | LTCR    | Y           | E        |         1 |            1 |  4518 |
+| 6554A0A7 | 2026-07-26 11:17:27.27 |         6 | ROUTE      | 90101 |        0 | SCRIBE   | 000.SCRIBE   |         | johnsonr | ROUTE:SBH2-01A                      | RT       | LTCR    | Y           | E        |         1 |            1 |  4518 |
+| 6554A0A7 | 2026-07-26 11:17:27.27 |        10 | CREATE LOT | 90101 |        0 | SCRIBE   | 000.SCRIBE   |         | johnsonr | QTY: 25 SCRIBED:F31082              | CR       | LTCR    | Y           | E        |         1 |            1 |  4518 |
+| 6554A0A7 | 2026-07-26 11:17:27.27 |        12 | MASK/REV   | 90101 |        0 | SCRIBE   | 000.SCRIBE   |         | johnsonr | ADD LVL:075 MSK:60609810 REV:A SET: | MR       | LTCR    | Y           | E        |         1 |            1 |  4518 |
+| 6554A0A7 | 2026-07-26 11:17:27.27 |        12 | MASK/REV   | 90101 |        0 | SCRIBE   | 000.SCRIBE   |         | johnsonr | ADD LVL:030 MSK:60609803 REV:A SET: | MR       | LTCR    | Y           | E        |         1 |            1 |  4518 |
+| 6554A0A7 | 2026-07-26 11:17:27.27 |        11 | RAWWFR PRT | 90101 |        0 | SCRIBE   | 000.SCRIBE   |         | johnsonr | RAW WAFER NUMBER:61332900 Rev: F    | WF       | LTCR    | Y           | E        |         1 |            1 |  4518 |
+| 6554A0A7 | 2026-07-26 11:17:27.27 |         3 | OWNERCODE  | 90101 |        0 | SCRIBE   | 000.SCRIBE   |         | johnsonr | OWNER:PROD                          | OW       | LTCR    | Y           | E        |         1 |            1 |  4518 |
+| 6554A0A7 | 2026-07-26 11:17:27.27 |        12 | MASK/REV   | 90101 |        0 | SCRIBE   | 000.SCRIBE   |         | johnsonr | ADD LVL:038 MSK:60609806 REV:A SET: | MR       | LTCR    | Y           | E        |         1 |            1 |  4518 |
+| 6554A0A7 | 2026-07-26 11:17:27.27 |        12 | MASK/REV   | 90101 |        0 | SCRIBE   | 000.SCRIBE   |         | johnsonr | ADD LVL:043 MSK:60609807 REV:A SET: | MR       | LTCR    | Y           | E        |         1 |            1 |  4518 |
+| 6554A0A7 | 2026-07-26 11:17:27.27 |         7 | VALUEADDED | 90101 |        0 | SCRIBE   | 000.SCRIBE   |         | johnsonr | NEW VALUEADDED:NORMAL               | VA       | LTCR    | Y           | I        |         1 |            1 |  4518 |
+| 6554A0A7 | 2026-07-26 11:17:27.27 |        12 | COMMENT    | 90101 |        0 | SCRIBE   | 000.SCRIBE   |         | johnsonr | Wfrs added to WaferSortData.        | CM       | LTCR    | Y           | E        |         1 |            1 |  4518 |
+| 6554A0A7 | 2026-07-26 11:17:27.27 |         5 | PART NUM   | 90101 |        0 | SCRIBE   | 000.SCRIBE   |         | johnsonr | PART:C_MG5913AP-FE                  | PT       | LTCR    | Y           | E        |         1 |            1 |  4518 |
+| 6554A0A7 | 2026-07-26 11:17:27.27 |         4 | TARGETPRTn | 90101 |        0 | SCRIBE   | 000.SCRIBE   |         | johnsonr | NEW TARGET PART:MG5913AP-FE         | TN       | LTCR    | Y           | E        |         1 |            1 |  4518 |
+| 6554A0A7 | 2026-07-26 11:17:27.27 |        12 | MASK/REV   | 90101 |        0 | SCRIBE   | 000.SCRIBE   |         | johnsonr | ADD LVL:029 MSK:60609804 REV:A SET: | MR       | LTCR    | Y           | E        |         1 |            1 |  4518 |
+
 
 # Lot History Analysis - LOT 6554A0A7
 
