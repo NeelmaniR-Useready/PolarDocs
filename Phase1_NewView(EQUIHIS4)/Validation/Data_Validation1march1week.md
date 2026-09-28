@@ -141,45 +141,6 @@ Every single column demonstrates **100.0% cardinality parity**:
 
 ---
 
-### ⚙️ Inner-Join Key & Attribute Mismatch Analysis
-
-When performing an inner join between `df_Prod` and `df_Fabric` on composite keys `['MACHINE', 'DATE_TIME', 'LINEORDER']`:
-
-```
-Composite Key: [MACHINE] + [DATE_TIME] + [LINEORDER]
-```
-
-#### Column-by-Column Mismatch Summary
-
-| Column Name | Mismatch Count | Status | Root Cause Category |
-| :--- | :---: | :---: | :--- |
-| **DATE_TIME_RUN** | **0** | ✅ Pass | Perfect field alignment |
-| **MACHINE_DESCRIPTION** | **0** | ✅ Pass | Perfect master data lookup |
-| **MACHINE_GROUP** | **0** | ✅ Pass | Perfect machine grouping |
-| **MACHINE_TYPE** | **0** | ✅ Pass | Perfect machine classification |
-| **MACHINE_KIND** | **0** | ✅ Pass | Perfect machine kind classification |
-| **REPAIR1_CODE** | **0** | ✅ Pass | Perfect null constant handling |
-| **REPAIR1_NAME** | **0** | ✅ Pass | Perfect null constant handling |
-| **REPAIR2_CODE** | **0** | ✅ Pass | Perfect null constant handling |
-| **REPAIR2_NAME** | **0** | ✅ Pass | Perfect null constant handling |
-| **REPAIR3_CODE** | **0** | ✅ Pass | Perfect null constant handling |
-| **REPAIR3_NAME** | **0** | ✅ Pass | Perfect null constant handling |
-| **MACHINE_PRIORITY** | **0** | ✅ Pass | Perfect down priority mapping |
-| **STATUS1_CODE** | **83,456** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
-| **STATUS1_NAME** | **83,456** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
-| **STATUS2_CODE** | **83,430** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
-| **STATUS2_NAME** | **83,430** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
-| **PM_CODE** | **83,430** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
-| **PM_NAME** | **83,430** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
-| **EMPID** | **83,430** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
-| **IGNORE_RECORD** | **83,430** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
-| **COMMENTS** | **121,918** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
-| **COMMENTTYPE** | **19,784** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
-| **REPAIRCODE** | **1,798** | ⚠️ Minor Variance | Repair code lookup join tie-breaker variance on simultaneous records |
-| **USERNAME** | **1,854** | ⚠️ Minor Variance | Case sensitivity difference (e.g. `ALIS` vs `alis`) |
-
----
-
 ### 📋 Environment Validation Summary
 
 | Core Area | Status | Remarks |
