@@ -140,44 +140,6 @@ graph TD
 | **REPAIRCODE** | 0 | 0 | **0** | ✅ Perfect Parity |
 
 ---
-
-### ⚙️ Inner-Join Key & Attribute Mismatch Analysis
-
-```
-Composite Key: [MACHINE] + [DATE_TIME] + [LINEORDER]
-```
-
-#### Column-by-Column Mismatch Summary
-
-| Column Name | Mismatch Count | Status | Root Cause Category |
-| :--- | :---: | :---: | :--- |
-| **DATE_TIME_RUN** | **0** | ✅ Pass | Perfect field alignment |
-| **MACHINE_DESCRIPTION** | **0** | ✅ Pass | Perfect master data lookup |
-| **MACHINE_GROUP** | **0** | ✅ Pass | Perfect machine grouping |
-| **MACHINE_TYPE** | **0** | ✅ Pass | Perfect machine classification |
-| **MACHINE_KIND** | **0** | ✅ Pass | Perfect machine kind classification |
-| **REPAIR1_CODE** | **0** | ✅ Pass | Perfect null constant handling |
-| **REPAIR1_NAME** | **0** | ✅ Pass | Perfect null constant handling |
-| **REPAIR2_CODE** | **0** | ✅ Pass | Perfect null constant handling |
-| **REPAIR2_NAME** | **0** | ✅ Pass | Perfect null constant handling |
-| **REPAIR3_CODE** | **0** | ✅ Pass | Perfect null constant handling |
-| **REPAIR3_NAME** | **0** | ✅ Pass | Perfect null constant handling |
-| **MACHINE_PRIORITY** | **0** | ✅ Pass | Perfect down priority mapping |
-| **STATUS1_CODE** | **56,484** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
-| **STATUS1_NAME** | **56,484** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
-| **STATUS2_CODE** | **55,032** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
-| **STATUS2_NAME** | **55,032** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
-| **PM_CODE** | **55,032** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
-| **PM_NAME** | **55,032** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
-| **EMPID** | **55,080** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
-| **IGNORE_RECORD** | **55,042** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
-| **COMMENTS** | **26,831** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
-| **COMMENTTYPE** | **27,949** | 🟡 Crossed Branch Join | Status change row matched against simultaneous comment row |
-| **REPAIRCODE** | **627** | ⚠️ Minor Variance | Repair code lookup join tie-breaker variance on simultaneous records |
-| **USERNAME** | **103** | ⚠️ Minor Variance | Case sensitivity difference (e.g. `HAGENJ` vs `hagenj`) |
-
----
-
 ### 📋 Environment Validation Summary
 
 | Core Area | Status | Remarks |
