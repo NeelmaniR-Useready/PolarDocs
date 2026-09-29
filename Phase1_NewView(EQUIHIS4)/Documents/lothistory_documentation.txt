@@ -1,0 +1,289 @@
+LOTHISTORY Business description and related fields:
+
+Executive Summary
+
+Field / Concept: LOT
+Business meaning: The unit of work processed through the fab. A lot contains one or more wafers and is the primary WIP and genealogy object.
+
+Field / Concept: OPER
+Business meaning: A specific process step on a route. It answers: where is the lot in the manufacturing flow?
+
+Field / Concept: COMMAND
+Business meaning: The transaction or system action performed against the lot. It answers: what action was taken?
+
+Field / Concept: HISTCODE
+Business meaning: The specific history event or attribute recorded by a command, such as MOVE IN, MOVE OUT, ROUTE, COMMENT, or LOT COMPLETE.
+
+Field / Concept: HISTORDER
+Business meaning: A field used in lot-history extracts to distinguish or order records that share the same transaction context. The exact database contract should be validated against the authoritative schema.
+
+Field / Concept: MASK_LVL
+Business meaning: An operation property associated with the process step. Internal documentation confirms operations have a mask level. It is the masking level that operations are associated with. It can also be thought of as layer.
+
+Field / Concept: OPERATION_DESC
+Business meaning: The human-readable operation description. OPER should be treated as the identifier; descriptions should be interpreted with route and historical context.
+
+
+1. LOT Lifecycle
+
+What a LOT represents
+
+In NetVision, a LOT is the unit of work processed through the fab. It contains one or more wafers, typically 25, and carries the information needed to manage current WIP position, route, operation, machine assignment, dispatch area, masks, priority, sales-order linkage, attributes, and manufacturing history.
+
+End-to-end business lifecycle
+
+Stage: 1. Define product flow
+Business activity: A part is assigned to a route. The route contains an ordered sequence of runcards and operations.
+Typical records or outcomes: Approved route and operation sequence.
+
+Stage: 2. Create the lot
+Business activity: LotCreate establishes the lot with part, route, owner, wafer, mask, history, and initial WIP details. For applicable production lots, raw wafer inventory is decremented in Great Plains.
+Typical records or outcomes: LTCR command; CR, PT, RT, WF and related history entries.
+
+Stage: 3. Initial dispatch
+Business activity: After creation, eligible non-test-wafer lots are automatically dispatched to the first operation when required route-operation-machine and recipe information is available.
+Typical records or outcomes: Initial WIP and dispatch state.
+
+Stage: 4. Process through route
+Business activity: The lot moves through operations using move-in and move-out activity. NetVision validates resources and captures genealogy, EDC, SPC, comments, status, and location history.
+Typical records or outcomes: MVIN/MOUT and movement-related history.
+
+Stage: 5. Handle exceptions
+Business activity: The lot may be held, released, reworked, split, merged, repositioned, rerouted, or adjusted under business rules.
+Typical records or outcomes: HOLD, REWK, SPLT, LMRG, LRTE, LOPR and related history.
+
+Stage: 6. Stage for transfer
+Business activity: The completed fabrication lot reaches the TRANSFER operation or staging area and must satisfy transfer validation, including applicable inspection and quality requirements.
+Typical records or outcomes: Transfer eligibility.
+
+Stage: 7. Complete and transfer
+Business activity: LotTransfer marks the lot completed, records completion data, removes it from active WIP, and may create a finished-goods inventory transaction in Great Plains.
+Typical records or outcomes: TRNF command; LC history; closed-to-manufacturing state.
+
+Stage: 8. Reporting and downstream use
+Business activity: Completed lot information remains available for reporting, labels, quality, traceability, and genealogy.
+Typical records or outcomes: Reporting record and retained history.
+
+
+2. Operations and Commands
+
+OPER: the process step
+An operation is a specific process step that a lot goes through. At minimum, an operation has an operation number, description, mask level, and dispatch area. Operations are ordered within runcards and routes. A lot is placed at the first route operation when created and progresses through the ordered flow.
+
+COMMAND: the transaction
+A command identifies the transaction or applications action that caused the lot-history records to be written. One command can generate multiple HISTCODE rows because a single business transaction may record several effects or attributes.
+
+Command: LTCR
+Plain-language name: Lot Create
+Role in lifecycle: Creates a fabrication lot and its initial manufacturing records.
+
+Command: MVIN
+Plain-language name: Move In
+Role in lifecycle: Records entry into processing at the current operation or machine.
+
+Command: MOUT
+Plain-language name: Move Out
+Role in lifecycle: Records completion or exit from the current processing step and may advance the lot.
+
+Command: DISP
+Plain-language name: Dispatch
+Role in lifecycle: Assigns or requests a lot for processing.
+
+Command: HOLD
+Plain-language name: Hold
+Role in lifecycle: Changes or records lot hold status and comments.
+
+Command: SPLT
+Plain-language name: Lot Split
+Role in lifecycle: Creates a child lot or separates wafers from the original lot.
+
+Command: LMRG
+Plain-language name: Lot Merge
+Role in lifecycle: Combines eligible lots or quantities.
+
+Command: REWK
+Plain-language name: Rework
+Role in lifecycle: Routes a full or partial lot through an approved rework path.
+
+Command: LOPR
+Plain-language name: Change Lot Operation
+Role in lifecycle: Adjusts the lot to another operation under business rules.
+
+Command: LRTE
+Plain-language name: Change Lot Route
+Role in lifecycle: Changes the route and records associated operation/route effects.
+
+Command: RPOS
+Plain-language name: Reposition
+Role in lifecycle: Repositions or requests the lot within an operation.
+
+Command: SETP/SETE
+Plain-language name: Set Production / Engineering Flags
+Role in lifecycle: Updates production- or engineering-controlled lot attributes.
+
+Command: RPUR
+Plain-language name: Repurpose Lot
+Role in lifecycle: Recreates scrap material for approved engineering use.
+
+Command: TRNF
+Plain-language name: Transfer
+Role in lifecycle: Completes and closes the lot and performs the final manufacturing-to-inventory handoff when configured.
+
+Interpretation rule: Use OPER to understand process position, COMMAND to understand the initiating transaction, and HISTCODE to understand each detailed effect recorded by that transaction.
+
+
+3. History Codes and Order
+
+HISTCODE
+HISTCODE identifies the specific event, attribute, or state change written to lot history. The command-to-history mapping shows that the same HISTCODE can appear under different commands and that one command commonly produces several history rows.
+
+Code: CR
+History label: CREATE LOT
+Business description: Creation of the lot.
+
+Code: IN
+History label: MOVE IN
+Business description: Lot entered processing.
+
+Code: MV
+History label: MOVE OUT
+Business description: Lot exited or completed a processing step.
+
+Code: TX
+History label: TRANSITION
+Business description: Lot is transitioning into move-in.
+
+Code: LA
+History label: ARRIVAL
+Business description: Lot arrived at an operation.
+
+Code: DL
+History label: DISPATCH
+Business description: Lot was dispatched.
+
+Code: SK/SA
+History label: SKIP OPER / Auto Skip
+Business description: Operation was skipped manually or automatically.
+
+Code: RT
+History label: ROUTE
+Business description: Route associated with or changed for the lot.
+
+Code: OP
+History label: ADJ OPER
+Business description: Operation adjustment.
+
+Code: SP
+History label: SPLIT LOT
+Business description: Lot split transaction.
+
+Code: MM/MQ
+History label: MERGE LOTS / MERGE QTY
+Business description: Lot merge and resulting quantity.
+
+Code: RW
+History label: REWORK
+Business description: Lot rework.
+
+Code: R1/R2
+History label: RTE LEAVE/RTE RETURN
+Business description: Departure from and return to the main route.
+
+Code: HC
+History label: HOLD CODE
+Business description: Lot hold status or reason.
+
+Code: LS
+History label: CHG STATUS
+Business description: Lot status change.
+
+Code: CM/CA
+History label: COMMENT/ Automation Comment
+Business description: User or automated explanatory comment.
+
+Code: PT
+History label: PART NUM
+Business description: Lot part number.
+
+Code: MR
+History label: MASK/REV
+Business description: Mask number or revision associated with the lot.
+
+Code: OW
+History label: OWNERCODE
+Business description: Lot owner code.
+
+Code: DD
+History label: DUE DATE
+Business description: Lot due date.
+
+Code: HT
+History label: HOT STATUS
+Business description: Hot-lot flag or priority status.
+
+Code: SO
+History label: SALES ORDR
+Business description: Sales-order association.
+
+Code: QI/QD/QE
+History label: Quality Incident / Description / Event
+Business description: Quality event and supporting description.
+
+Code: SC
+History label: ADHOCSCRAP
+Business description: Ad hoc wafer scrap.
+
+Code: UN
+History label: UNSCRAP
+Business description: Previously scrapped wafers were restored.
+
+Code: LC
+History label: LOTCOMPLET
+Business description: Lot completed during transfer.
+
+HISTORDER
+Multiple lines were needed for the history entry. This is the order that they were entered.
+
+
+4. Other Key Fields
+
+MASK_LVL
+This is the Mask level or the layer. Masks are used to define objects/structures. Different layers build different parts of the components.
+
+OPER and OPERATION_DESC
+OPER is the operation identifier or number of a step on a route. OPERATION_DESC is the display description is the human readble text associated with an operation in a route. Operation number and description are separate operation properties.
+
+
+5. How to Read a Lot-History Row
+
+Field: LOT
+Example: 6053A0K9
+Interpretation: The manufacturing lot whose history is being described.
+
+Field: OPER
+Example: 50325
+Interpretation: The process operation associated with the event.
+
+Field: OPERATION DESC
+Example: LOW_TEMP
+Interpretation: The human-readable operation description captured in the extract.
+
+Field: COMMAND
+Example: MOUT
+Interpretation: The transaction was a Move-Out.
+
+Field: HISTCODE
+Example: MV
+Interpretation: The detailed history event was MOVE OUT.
+
+Field: HISTORDER
+Example: 1
+Interpretation: Order/differentiation within the transaction context; exact semantics require schema confirmation.
+
+Field: MASK LVL
+Example: 026
+Interpretation: Operation mask/process-layer value; exact encoding requires data-dictionary confirmation.
+
+Field: COMMENTS
+Example: QTY: 25
+Interpretation: Additional business detail recorded with the event.
