@@ -167,3 +167,58 @@ GROUP BY
 ORDER BY
     sequence;
 ```
+
+
+
+
+Ran in fabric the working code was 
+
+```sql
+
+
+WITH ordered AS (
+    SELECT
+        LOT,
+        DATE_TIME,
+        USERNAME,
+        HISTCODE,
+        HIST_REC,
+        LAG(USERNAME) OVER (
+            PARTITION BY LOT
+            ORDER BY DATE_TIME
+        ) AS prev_username
+    FROM TrainingVision.LotHistV
+    WHERE LOT = '5125A004B'
+),
+marked AS (
+    SELECT *,
+        CASE
+            WHEN prev_username = USERNAME THEN 0
+            ELSE 1
+        END AS new_group
+    FROM ordered
+),
+numbered AS (
+    SELECT *,
+        SUM(new_group) OVER (
+            PARTITION BY LOT
+            ORDER BY DATE_TIME
+            ROWS UNBOUNDED PRECEDING
+        ) AS sequence
+    FROM marked
+)
+SELECT
+    sequence,
+    LOT,
+    USERNAME,
+    STRING_AGG(HIST_REC, ' ')
+        WITHIN GROUP (ORDER BY DATE_TIME) AS HIST_REC
+FROM numbered
+GROUP BY
+    sequence,
+    LOT,
+    USERNAME
+ORDER BY
+    sequence;
+
+```
