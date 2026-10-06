@@ -118,6 +118,7 @@ By default, Copilot Studio might try to use the .docx file to answer the user's 
 
 # Hist_Rec analysis code 
 
+```sql
 WITH ordered AS (
     SELECT
         LOT,
@@ -165,3 +166,4 @@ GROUP BY
     HISTCODE
 ORDER BY
     sequence;
+```
