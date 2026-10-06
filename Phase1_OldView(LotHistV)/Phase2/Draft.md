@@ -221,8 +221,9 @@ GROUP BY
 ORDER BY
     sequence;
 
-```---------------------------------------------------
+------------------------------------
 Tanishk code -> sequence
+------------------------------------
 WITH ordered AS (
     SELECT
         LOT,
@@ -272,3 +273,13 @@ GROUP BY
     USERNAME
 ORDER BY
     sequence;
+
+-----------------------------------
+SELECT *
+FROM your_table
+WHERE LOT = 'YOUR_LOT'
+ORDER BY
+    DATE_TIME ASC,
+    HISORDER ASC,
+    OPER ASC;
+-----------------------------------
