@@ -228,25 +228,27 @@ WITH ordered AS (
     SELECT
         LOT,
         DATE_TIME,
-        HISORDER,
+        HISTORDER,
         OPER,
         USERNAME,
         HISTCODE,
+        HIS_REC,
         LAG(USERNAME) OVER (
             PARTITION BY LOT
-            ORDER BY DATE_TIME ASC, HISORDER ASC, OPER ASC
+            ORDER BY DATE_TIME ASC, HISTORDER ASC, OPER ASC
         ) AS prev_username
-    FROM your_table
-    WHERE LOT = 'YOUR_LOT'
+    FROM TrainingVision.LotHistV
+    WHERE LOT = '111111'
 ),
 sequenced AS (
     SELECT
         LOT,
         DATE_TIME,
-        HISORDER,
+        HISTORDER,
         OPER,
         USERNAME,
         HISTCODE,
+        HIS_REC,
         SUM(
             CASE
                 WHEN prev_username = USERNAME THEN 0
@@ -254,7 +256,7 @@ sequenced AS (
             END
         ) OVER (
             PARTITION BY LOT
-            ORDER BY DATE_TIME ASC, HISORDER ASC, OPER ASC
+            ORDER BY DATE_TIME ASC, HISTORDER ASC, OPER ASC
             ROWS UNBOUNDED PRECEDING
         ) AS sequence
     FROM ordered
@@ -262,10 +264,10 @@ sequenced AS (
 SELECT
     sequence,
     USERNAME,
-    STRING_AGG(HISTCODE, ', ')
+    STRING_AGG(HIS_REC, ' ')
         WITHIN GROUP (
-            ORDER BY DATE_TIME ASC, HISORDER ASC, OPER ASC
-        ) AS HISTCODES
+            ORDER BY DATE_TIME ASC, HISTORDER ASC, OPER ASC
+        ) AS HIS_REC
 FROM sequenced
 GROUP BY
     LOT,
@@ -276,10 +278,10 @@ ORDER BY
 
 -----------------------------------
 SELECT *
-FROM your_table
+FROM TrainingVision.LotHistV
 WHERE LOT = 'YOUR_LOT'
 ORDER BY
     DATE_TIME ASC,
-    HISORDER ASC,
+    HISTORDER ASC,
     OPER ASC;
 -----------------------------------
