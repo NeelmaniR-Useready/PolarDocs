@@ -114,3 +114,54 @@ By default, Copilot Studio might try to use the .docx file to answer the user's 
 * How the SQL query is executed? (e.g., Are you using a Power Automate flow, a custom plugin/connector, or standard Copilot Studio topics?)
 * What are a few examples of the raw values or codes in the 6 columns that the .docx file translates? (e.g., Status 1 means Active, or Code A means High Priority?)
  
+
+
+# Hist_Rec analysis code 
+
+WITH ordered AS (
+    SELECT
+        LOT,
+        DATE_TIME,
+        USERNAME,
+        HISTCODE,
+        HIS_REC,
+ 
+        LAG(USERNAME) OVER (
+            PARTITION BY LOT
+            ORDER BY DATE_TIME
+        ) AS prev_username
+    FROM TrainingVision.LotHistv
+    WHERE LOT = 'YOUR_LOT'
+),
+marked AS (
+    SELECT *,
+        CASE
+            WHEN prev_username = USERNAME THEN 0
+            ELSE 1
+        END AS new_group
+    FROM ordered
+),
+numbered AS (
+    SELECT *,
+        SUM(new_group) OVER (
+            PARTITION BY LOT
+            ORDER BY DATE_TIME
+            ROWS UNBOUNDED PRECEDING
+        ) AS sequence
+    FROM marked
+)
+SELECT
+    sequence,
+    LOT,
+    USERNAME,
+    HISTCODE,
+    STRING_AGG(HIS_REC, ' ')
+        WITHIN GROUP (ORDER BY DATE_TIME) AS HIS_REC
+FROM numbered
+GROUP BY
+    LOT,
+    sequence,
+    USERNAME,
+    HISTCODE
+ORDER BY
+    sequence;
