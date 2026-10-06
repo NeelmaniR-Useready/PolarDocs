@@ -221,4 +221,54 @@ GROUP BY
 ORDER BY
     sequence;
 
-```
+```---------------------------------------------------
+Tanishk code -> sequence
+WITH ordered AS (
+    SELECT
+        LOT,
+        DATE_TIME,
+        HISORDER,
+        OPER,
+        USERNAME,
+        HISTCODE,
+        LAG(USERNAME) OVER (
+            PARTITION BY LOT
+            ORDER BY DATE_TIME ASC, HISORDER ASC, OPER ASC
+        ) AS prev_username
+    FROM your_table
+    WHERE LOT = 'YOUR_LOT'
+),
+sequenced AS (
+    SELECT
+        LOT,
+        DATE_TIME,
+        HISORDER,
+        OPER,
+        USERNAME,
+        HISTCODE,
+        SUM(
+            CASE
+                WHEN prev_username = USERNAME THEN 0
+                ELSE 1
+            END
+        ) OVER (
+            PARTITION BY LOT
+            ORDER BY DATE_TIME ASC, HISORDER ASC, OPER ASC
+            ROWS UNBOUNDED PRECEDING
+        ) AS sequence
+    FROM ordered
+)
+SELECT
+    sequence,
+    USERNAME,
+    STRING_AGG(HISTCODE, ', ')
+        WITHIN GROUP (
+            ORDER BY DATE_TIME ASC, HISORDER ASC, OPER ASC
+        ) AS HISTCODES
+FROM sequenced
+GROUP BY
+    LOT,
+    sequence,
+    USERNAME
+ORDER BY
+    sequence;
