@@ -313,3 +313,122 @@ SELECT
         THEN 'PASS'
         ELSE 'FAIL'
     END AS DataValidation;
+
+-----------------------------------------------------------------------------
+
+Query 1 — Row count and date range validation 
+-- Validates: Total rows, minimum timestamp, and maximum timestamp in both sources.
+```sql
+WITH FABRIC AS
+(
+    SELECT *
+    FROM MES_Analytics.vw_EQUIPHIS4
+    WHERE DATE_TIME >= DATEADD(DAY, -365, '2026-09-28 23:59:59')
+      AND DATE_TIME <= '2026-09-28 23:59:59'
+)
+SELECT
+    'PROD' AS Source,
+    COUNT(*) AS TotalRows,
+    MIN(DATE_TIME) AS MinDate,
+    MAX(DATE_TIME) AS MaxDate
+FROM MES_Analytics.TrainingVision_EQUIPHIS4
+
+UNION ALL
+
+SELECT
+    'FABRIC',
+    COUNT(*),
+    MIN(DATE_TIME),
+    MAX(DATE_TIME)
+FROM FABRIC;
+```
+
+Query 2 — Complete data reconciliation
+-- Validates: Complete row-by-row data differences across all columns.
+
+OnlyInProd = 0: No distinct rows found exclusively in PROD.
+
+OnlyInFabric = 0: No distinct rows found exclusively in FABRIC.
+
+DataValidation = PASS: Both sources contain the same set of rows.
+
+```sql
+WITH PROD AS
+(
+    SELECT *
+    FROM MES_Analytics.TrainingVision_EQUIPHIS4
+),
+FABRIC AS
+(
+    SELECT *
+    FROM MES_Analytics.vw_EQUIPHIS4
+    WHERE DATE_TIME >= DATEADD(DAY, -365, '2026-09-28 23:59:59')
+      AND DATE_TIME <= '2026-09-28 23:59:59'
+),
+PRODONLY AS
+(
+    SELECT * FROM PROD
+    EXCEPT
+    SELECT * FROM FABRIC
+),
+FABRICONLY AS
+(
+    SELECT * FROM FABRIC
+    EXCEPT
+    SELECT * FROM PROD
+)
+SELECT
+    (SELECT COUNT(*) FROM PROD) AS ProdRows,
+    (SELECT COUNT(*) FROM FABRIC) AS FabricRows,
+    (SELECT COUNT(*) FROM PRODONLY) AS OnlyInProd,
+    (SELECT COUNT(*) FROM FABRICONLY) AS OnlyInFabric,
+    CASE
+        WHEN EXISTS (SELECT 1 FROM PRODONLY)
+          OR EXISTS (SELECT 1 FROM FABRICONLY)
+        THEN 'FAIL'
+        ELSE 'PASS'
+    END AS DataValidation;
+```
+Query 3 — Duplicate business key validation
+
+Assumed business key: MACHINE + DATE_TIME + LINEORDER
+
+
+
+```sql
+WITH FABRIC AS
+(
+    SELECT *
+    FROM MES_Analytics.vw_EQUIPHIS4
+    WHERE DATE_TIME >= DATEADD(DAY, -365, '2026-09-28 23:59:59')
+      AND DATE_TIME <= '2026-09-28 23:59:59'
+),
+DUPLICATES AS
+(
+    SELECT
+        'PROD' AS Source,
+        MACHINE,
+        DATE_TIME,
+        LINEORDER,
+        COUNT(*) AS DuplicateCount
+    FROM MES_Analytics.TrainingVision_EQUIPHIS4
+    GROUP BY MACHINE, DATE_TIME, LINEORDER
+    HAVING COUNT(*) > 1
+
+    UNION ALL
+
+    SELECT
+        'FABRIC',
+        MACHINE,
+        DATE_TIME,
+        LINEORDER,
+        COUNT(*)
+    FROM FABRIC
+    GROUP BY MACHINE, DATE_TIME, LINEORDER
+    HAVING COUNT(*) > 1
+)
+SELECT *
+FROM DUPLICATES
+ORDER BY MACHINE, DATE_TIME, LINEORDER, Source;
+```
+-- Validates: Whether the assumed business key appears more than once in either source. Ideally, this query returns zero rows if the key is expected to be unique.
