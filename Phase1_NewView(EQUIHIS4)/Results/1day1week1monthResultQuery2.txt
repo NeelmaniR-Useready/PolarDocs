@@ -1,0 +1,114 @@
+-- 1 day timeframe (2025-12-01 to 2025-12-02)
+WITH PROD AS
+(
+    SELECT *
+    FROM MES_Analytics.TrainingVision_EQUIPHIS4
+    WHERE DATE_TIME >= '2025-12-01'
+      AND DATE_TIME <  '2025-12-02'
+),
+FABRIC AS
+(
+    SELECT *
+    FROM MES_Analytics.vw_EQUIPHIS4
+    WHERE DATE_TIME >= '2025-12-01'
+      AND DATE_TIME <  '2025-12-02'
+),
+PRODONLY AS
+(
+    SELECT * FROM PROD
+    EXCEPT
+    SELECT * FROM FABRIC
+),
+FABRICONLY AS
+(
+    SELECT * FROM FABRIC
+    EXCEPT
+    SELECT * FROM PROD
+)
+SELECT
+    (SELECT COUNT(*) FROM PROD) AS ProdRows,
+    (SELECT COUNT(*) FROM FABRIC) AS FabricRows,
+    (SELECT COUNT(*) FROM PRODONLY) AS OnlyInProd,
+    (SELECT COUNT(*) FROM FABRICONLY) AS OnlyInFabric;
+
+Results:
+ProdRows	FabricRows	OnlyInProd	OnlyInFabric
+19264	19264	9	9
+
+-- 1 week timeframe (2026-02-01 to 2026-02-08)
+WITH PROD AS
+(
+    SELECT *
+    FROM MES_Analytics.TrainingVision_EQUIPHIS4
+    WHERE DATE_TIME >= '2026-02-01'
+      AND DATE_TIME <  '2026-02-08'
+),
+FABRIC AS
+(
+    SELECT *
+    FROM MES_Analytics.vw_EQUIPHIS4
+    WHERE DATE_TIME >= '2026-02-01'
+      AND DATE_TIME <  '2026-02-08'
+),
+PRODONLY AS
+(
+    SELECT * FROM PROD
+    EXCEPT
+    SELECT * FROM FABRIC
+),
+FABRICONLY AS
+(
+    SELECT * FROM FABRIC
+    EXCEPT
+    SELECT * FROM PROD
+)
+SELECT
+    (SELECT COUNT(*) FROM PROD) AS ProdRows,
+    (SELECT COUNT(*) FROM FABRIC) AS FabricRows,
+    (SELECT COUNT(*) FROM PRODONLY) AS OnlyInProd,
+    (SELECT COUNT(*) FROM FABRICONLY) AS OnlyInFabric;
+
+Results:
+
+ProdRows	FabricRows	OnlyInProd	OnlyInFabric
+145077	145077	133	133
+
+-- 1 month timeframe (2026-05-01 to 2026-06-01)
+
+WITH PROD AS
+(
+    SELECT *
+    FROM MES_Analytics.TrainingVision_EQUIPHIS4
+    WHERE DATE_TIME >= '2026-05-01'
+      AND DATE_TIME <  '2026-06-01'
+),
+FABRIC AS
+(
+    SELECT *
+    FROM MES_Analytics.vw_EQUIPHIS4
+    WHERE DATE_TIME >= '2026-05-01'
+      AND DATE_TIME <  '2026-06-01'
+),
+PRODONLY AS
+(
+    SELECT * FROM PROD
+    EXCEPT
+    SELECT * FROM FABRIC
+),
+FABRICONLY AS
+(
+    SELECT * FROM FABRIC
+    EXCEPT
+    SELECT * FROM PROD
+)
+SELECT
+    (SELECT COUNT(*) FROM PROD) AS ProdRows,
+    (SELECT COUNT(*) FROM FABRIC) AS FabricRows,
+    (SELECT COUNT(*) FROM PRODONLY) AS OnlyInProd,
+    (SELECT COUNT(*) FROM FABRICONLY) AS OnlyInFabric;
+
+
+Results:
+
+ProdRows	FabricRows	OnlyInProd	OnlyInFabric
+621851	621851	586	586
