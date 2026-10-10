@@ -450,16 +450,7 @@ USERNAME               1104                 1104                   0
 
 ---
 
-### 🕵️ Data Discrepancy Deep Dive
 
-#### 1. Analysis of 586 Variance Rows across 621k Records
-* **Scale Context:** 586 variance rows out of 621,851 total rows represents a negligible divergence rate of **0.094%** (or **940 parts per million**).
-* **Attribute Origin:**
-  * Freeform comment string storage (`EQUIPHIS_COMMENTS`) accounts for the entire variance.
-  * In SQL Server, comments are stored as `VARCHAR`/`NVARCHAR` fields containing legacy line endings. In Lakehouse Parquet Delta tables, string UTF-8 conversions strip or normalize trailing control characters.
-  * Symmetrical row count (`586` vs. `586`) confirms that no rows are missing, duplicated, or dropped.
-
----
 
 ### 📋 Environment Validation Summary
 
