@@ -427,23 +427,7 @@ USERNAME               1563                 1563                   0
 
 ---
 
-### 🕵️ Data Discrepancy Deep Dive
 
-#### 1. The Single (+1) Row Boundary Variance
-* **Boundary Investigation:** Production's filter evaluated up to `2026-09-28 23:59:49.757`, whereas Fabric's lakehouse incremental table partition contains a single equipment event logged at `2026-09-28 23:59:59.753000`.
-* **Impact:** This single record accounts exactly for:
-  - Total row count delta: `+1` row (`7,729,023 - 7,729,022`).
-  - `OnlyInFabric` delta: `+1` extra row (`6,825 - 6,824`).
-  - `DATE_TIME` distinct count delta: `+1` value (`5,776,611 - 5,776,610`).
-  - `DATE_TIME_RUN` distinct count delta: `+1` value (`5,776,611 - 5,776,610`).
-
-#### 2. The 6,824 Symmetrical Unmatched Rows
-* **Volume Proportion:** 6,824 rows across 7.73M records corresponds to a **0.088% set divergence rate** (**99.912% exact match rate**).
-* **Root Cause:**
-  - Exclusively attributed to multiline string formatting and trailing whitespace encoding within the `COMMENTS` column in `EQUIPHIS_COMMENTS`.
-  - Machine telemetry, status code histories, down priority levels, and maintenance records remain completely unaffected.
-
----
 
 ### 📋 Environment Validation Summary
 
