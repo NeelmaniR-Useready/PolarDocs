@@ -449,13 +449,7 @@ USERNAME               877                  877                    0
 
 ---
 
-### 🕵️ Data Discrepancy Deep Dive
 
-#### 1. The 133 Symmetrical Variances
-* **Pattern Analysis:** Exactly 133 rows exist in `OnlyInProd` and 133 rows in `OnlyInFabric` across 145,077 total rows (a 0.092% difference).
-* **Investigation Findings:**
-  1. **Line Order and Multiline Operator Comments:** When shop-floor technicians submit comments spanning multiple lines, differing newline encodings (`\r\n` vs. `\n`) or trailing tab characters cause `EXCEPT` comparisons to flag them as un-identical, despite identical logical meaning.
-  2. **Zero Missing Hardware Events:** Because distinct `MACHINE`, `STATUS1_CODE`, `STATUS2_CODE`, `PM_CODE`, and `REPAIRCODE` match 100%, none of the variances originate from dropped equipment status transitions.
 
 ---
 
