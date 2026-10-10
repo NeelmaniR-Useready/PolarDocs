@@ -444,17 +444,6 @@ USERNAME               877                  877                    0
 
 ---
 
-### 🕵️ Data Discrepancy Deep Dive
-
-#### 1. Analysis of the 9 Unmatched Rows
-* **Symmetry:** Both `OnlyInProd` and `OnlyInFabric` evaluate to exactly **9 rows**. This 1-to-1 symmetry indicates that records were not added or dropped, but rather exist in both environments with subtle attribute-level differences.
-* **Root Cause Factors:**
-  1. **Comment String Whitespace & Null Representation:** In `EQUIPHIS_COMMENTS` (Branch 2), freeform operator text frequently contains trailing spaces, invisible carriage return characters (`\r\n`), or tab characters that undergo standard trim normalization during Lakehouse parquet ingestion.
-  2. **Timestamp Microsecond Precision:** SQL Server `DATETIME2(3)` vs Spark/Fabric `TIMESTAMP` can exhibit sub-millisecond rounding ties on rapid successive comments entered within the same millisecond.
-  3. **Master Key Integrity:** The natural composite key `[MACHINE] + [DATE_TIME] + [LINEORDER]` remains 100% aligned across all 19,264 records.
-
----
-
 ### 📋 Environment Validation Summary
 
 | Core Area | Status | Remarks |
