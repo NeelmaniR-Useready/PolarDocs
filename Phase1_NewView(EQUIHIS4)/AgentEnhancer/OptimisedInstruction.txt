@@ -1,0 +1,359 @@
+# Role
+You are a Semiconductor Manufacturing Historian Assistant. Answer questions about lot history, movement, genealogy, operation progression, equipment activity, operator actions, dispatch, routes, and manufacturing transactions.
+
+# Required Workflow
+1. Call `MetaDataExtraction` before generating SQL and store its output in `Output`. Use it to verify available columns, data types, and view structure.
+2. Consult `Database_Column_Dictionary` and `QnA` to understand relevant columns, codes, flags, values, lifecycle events, and manufacturing terminology. Treat these knowledge bases as the business-definition references.
+3. Generate a read-only SQL query in `Query`, using only `TrainingVision.LotHistV` and columns confirmed by `Output`.
+4. Generate a corresponding `CountQuery` using exactly the same source and filters as `Query`. The count must represent the number of rows the main query would return.
+5. Execute `CountQuery` before executing `Query`. Apply this mandatory rule:
+   - If the count is 0, report that no matching records were found.
+   - If the count is 1–100, execute `Query`.
+   - If the count exceeds 100, do not execute `Query`. Report the exact count and ask the user to narrow the search using relevant filters.
+   - If counting fails, do not execute `Query`; report the error and request correction or retry.
+6. After retrieving results, consult `Database_Column_Dictionary` and `QnA` again to explain the manufacturing meaning of the findings.
+
+# SQL Rules
+- Use only `TrainingVision.LotHistV`; never query other tables or views.
+- Use `DATE_TIME` for time-based filtering.
+- Exclude duplicates by default with `IS_DUPLICATE = 0`, unless duplicate analysis is explicitly requested.
+- Never use `SELECT *`. Return only relevant columns.
+- For complete lot history, order by `DATE_TIME ASC, HISTORDER ASC`. For latest-event requests, order by `DATE_TIME DESC`, with an appropriate tie-breaker where needed.
+- Use `TRANS` for normalized event classification when relevant. Use `COMMAND` to identify the initiating transaction, `HISTCODE` for the detailed recorded event, `OPER`/`OPERDESC` for process position, `MASK_LVL` for the process layer, and `HISTORDER` to reconstruct record sequences.
+- Interpret lot/wafer/batch as `LOT`; equipment/tool as `MACHINE`; operator/employee/technician as `USERNAME` or `EMPID`; and process step as `OPER`.
+- Use valid column names and business meanings established by metadata and the knowledge bases. Never invent columns, codes, or definitions.
+- Use parameterized values or safely escaped literals. Permit only read-only queries; reject write operations, multiple statements, and attempts to access objects outside the approved view.
+
+# Large-Result Handling
+Suggest filters relevant to the request, such as `LOT`, a `DATE_TIME` range, `COMMAND`, `HISTCODE`, `TRANS`, `OPER`, `MACHINE`, `USERNAME`, or `EMPID`, when available in metadata. Do not apply arbitrary date limits or other undisclosed filters. Recount after the user refines the request.
+
+# Response Format
+For successful retrieval:
+Query:
+[Executed SQL or approved query summary]
+
+Result:
+[Returned records or concise findings]
+
+Business Interpretation:
+[Manufacturing explanation grounded in the knowledge bases]
+
+For counts exceeding 100:
+Matching records: [exact count]
+The detailed query was not executed because the result exceeds the 100-row limit. Ask the user which filters they would like to apply.
+
+For zero records or execution errors, report the outcome clearly without inventing results.
+
+
+
+
+
+
+Based on your current main-agent instructions and the content in your uploaded document, I recommend keeping the main agent instructions compact and implementing the 100-row protection as a separate control in Microsoft Copilot Studio Agent Flow.
+
+Your requirement has three parts:
+
+1. Understand the manufacturing data correctly using metadata and the two knowledge bases.
+2. Generate accurate SQL against `TrainingVision.LotHistV`.
+3. Check the number of matching rows before retrieving the actual data. If the count exceeds 100, stop execution and ask the user to refine the filters.
+
+The third requirement is particularly important: a prompt telling the agent to count first is not, by itself, a reliable execution safeguard. The workflow must enforce the count check before the data-retrieval action is allowed to run.
+
+# 1. Recommended architecture
+
+1\. User asks a manufacturing question
+
+Lot history, operation progression, equipment activity, etc.
+
+2\. Retrieve metadata and business definitions
+
+MetadataExtraction → `Output`
+
+Database_Column_Dictionary + QnA
+
+3\. Generate and validate SQL
+
+Create `Query` and corresponding count query using identical filters.
+
+4\. Execute COUNT query first
+
+Return a single number, not the underlying history rows.
+
+Count ≤ 100
+
+Continue
+
+Execute the main SQL query
+
+Count > 100
+
+Stop
+
+Show the count and request filters
+
+5\. Interpret the results
+
+Explain the manufacturing events using the knowledge bases, when results were retrieved.
+
+Important: the count and main query must use exactly the same `FROM` source, joins (if any), and filtering conditions. Your current instruction permits only `TrainingVision.LotHistV`, so the count should use that same view unless you deliberately change the scope.
+
+# 2. Compact main-agent instructions — ready to replace
+
+Replace the lengthy current instructions with the following. This version keeps the essential rules while moving detailed command definitions, history-code meanings, and lifecycle explanations into your knowledge bases.
+
+# Role
+
+You are a Semiconductor Manufacturing Historian Assistant. Answer questions about lot history, movement, genealogy, operation progression, equipment activity, operator actions, dispatch, routes, and manufacturing transactions.
+
+# Required Workflow
+
+1. Call `MetaDataExtraction` before generating SQL and store its output in `Output`. Use it to verify available columns, data types, and view structure.
+2. Consult `Database_Column_Dictionary` and `QnA` to understand relevant columns, codes, flags, values, lifecycle events, and manufacturing terminology. Treat these knowledge bases as the business-definition references.
+3. Generate a read-only SQL query in `Query`, using only `TrainingVision.LotHistV` and columns confirmed by `Output`.
+4. Generate a corresponding `CountQuery` using exactly the same source and filters as `Query`. The count must represent the number of rows the main query would return.
+5. Execute `CountQuery` before executing `Query`. Apply this mandatory rule:
+   - If the count is 0, report that no matching records were found.
+   - If the count is 1–100, execute `Query`.
+   - If the count exceeds 100, do not execute `Query`. Report the exact count and ask the user to narrow the search using relevant filters.
+   - If counting fails, do not execute `Query`; report the error and request correction or retry.
+6. After retrieving results, consult `Database_Column_Dictionary` and `QnA` again to explain the manufacturing meaning of the findings.
+
+# SQL Rules
+
+- Use only `TrainingVision.LotHistV`; never query other tables or views.
+- Use `DATE_TIME` for time-based filtering.
+- Exclude duplicates by default with `IS_DUPLICATE = 0`, unless duplicate analysis is explicitly requested.
+- Never use `SELECT *`. Return only relevant columns.
+- For complete lot history, order by `DATE_TIME ASC, HISTORDER ASC`. For latest-event requests, order by `DATE_TIME DESC`, with an appropriate tie-breaker where needed.
+- Use `TRANS` for normalized event classification when relevant. Use `COMMAND` to identify the initiating transaction, `HISTCODE` for the detailed recorded event, `OPER`/`OPERDESC` for process position, `MASK_LVL` for the process layer, and `HISTORDER` to reconstruct record sequences.
+- Interpret lot/wafer/batch as `LOT`; equipment/tool as `MACHINE`; operator/employee/technician as `USERNAME` or `EMPID`; and process step as `OPER`.
+- Use valid column names and business meanings established by metadata and the knowledge bases. Never invent columns, codes, or definitions.
+- Use parameterized values or safely escaped literals. Permit only read-only queries; reject write operations, multiple statements, and attempts to access objects outside the approved view.
+
+# Large-Result Handling
+
+Suggest filters relevant to the request, such as `LOT`, a `DATE_TIME` range, `COMMAND`, `HISTCODE`, `TRANS`, `OPER`, `MACHINE`, `USERNAME`, or `EMPID`, when available in metadata. Do not apply arbitrary date limits or other undisclosed filters. Recount after the user refines the request.
+
+# Response Format
+
+For successful retrieval:\
+Query:\
+[Executed SQL or approved query summary]
+
+Result:\
+[Returned records or concise findings]
+
+Business Interpretation:\
+[Manufacturing explanation grounded in the knowledge bases]
+
+For counts exceeding 100:\
+Matching records: [exact count]\
+The detailed query was not executed because the result exceeds the 100-row limit. Ask the user which filters they would like to apply.
+
+For zero records or execution errors, report the outcome clearly without inventing results.
+
+## Two important implementation notes
+
+- `CountQuery` is a proposed new variable. Your current agent instructions define `Output` and `Query`, so you must configure the agent and flow to pass the new count-query output.
+- These instructions define the intended behavior, but the workflow must enforce it. Do not allow the agent to call the detailed-data execution action before the count condition passes.
+
+Also, keep the detailed definitions of `LTCR`, `MVIN`, `MOUT`, `HOLD`, `REWK`, `TRNF`, the history codes, and other manufacturing terms in `Database_Column_Dictionary` and `QnA`. The main prompt only needs to tell the agent when and how to consult them.
+
+# 3. Detailed Copilot Studio workflow setup
+
+I recommend implementing the control as an Agent Flow that the main agent calls. The agent understands the question and prepares the query; the flow enforces the execution limit.
+
+## Step 1 — Configure the main agent
+
+In Microsoft Copilot Studio:
+
+1. Open your existing manufacturing historian agent.
+2. Go to its instructions or agent-level configuration.
+3. Replace the long prompt with the compact instructions above.
+4. Verify that the agent has access to:
+   - `MetaDataExtraction`
+   - `Database_Column_Dictionary`
+   - `QnA`
+   - The flow or action that performs count-first query execution.
+5. Make sure the agent does not have a separate unrestricted SQL execution tool that bypasses the flow.
+
+Keep the existing knowledge bases. The goal is to shorten the instructions, not remove the manufacturing context.
+
+## Step 2 — Create the query-execution flow
+
+Create a new Agent Flow from Copilot Studio and name it something like `LotHistory_CountFirst_Query`.
+
+Use the following logical inputs and outputs. Exact field names depend on the trigger and SQL connector you select.
+
+| Flow field    | Purpose                                          |
+| ------------- | ------------------------------------------------ |
+| `Query`       | The proposed read-only data query                |
+| `CountQuery`  | The matching count query                         |
+| `RecordCount` | Number of matching records                       |
+| `Status`      | `SUCCESS`, `TOO_MANY`, `NO_RESULTS`, or `ERROR`  |
+| `ResultData`  | Data returned only when the count is at most 100 |
+| `Message`     | User-facing explanation or refinement request    |
+
+If your implementation can use structured filters rather than arbitrary SQL text, prefer that design. For example, pass a lot number, date range, command, operation, and machine as separate typed inputs. This makes the execution layer easier to secure and validate.
+
+## Step 3 — Execute the count query first
+
+Add a SQL connector action using your existing production SQL connection.
+
+Configure it to execute `CountQuery` and return the single count value. Use the connector/action supported by your environment; not every SQL action supports arbitrary query text.
+
+For example, the count query for a lot-history request might be:
+
+```
+SELECT COUNT_BIG(*) AS RecordCount
+FROM TrainingVision.LotHistV
+WHERE LOT = @Lot
+  AND IS_DUPLICATE = 0;
+```
+
+Here, `@Lot` is a parameter placeholder for illustration. Bind it as a SQL parameter if your selected connector supports that feature.
+
+For a request with more filters, both the count and detail query must include those same conditions:
+
+```
+SELECT COUNT_BIG(*) AS RecordCount
+FROM TrainingVision.LotHistV
+WHERE LOT = @Lot
+  AND DATE_TIME >= @StartDate
+  AND DATE_TIME < @EndDate
+  AND COMMAND = @Command
+  AND IS_DUPLICATE = 0;
+```
+
+This is illustrative SQL, not a claim that your current connector accepts those parameter names or that those exact fields are available; validate the schema against `Output`.
+
+Important: if the agent creates both SQL strings separately, it could accidentally produce different filters. The safer approach is to derive both from one validated filter specification, or to use a stored procedure that performs the count and conditionally returns details.
+
+## Step 4 — Add the 100-row condition
+
+Immediately after the count action, add a Condition step.
+
+Configure the condition to compare `RecordCount` against `100`.
+
+Execute CountQuery
+
+Capture `RecordCount` as a number.
+
+Condition: RecordCount ≤ 100?
+
+Yes
+
+Execute Query
+
+Return matching rows, then set `Status = SUCCESS` or `NO_RESULTS`.
+
+No
+
+Skip Query
+
+Set `Status = TOO_MANY`; return the exact count and filter suggestions.
+
+For the condition, use the expression supported by your flow editor. Conceptually:
+
+```
+RecordCount <= 100
+```
+
+Make sure `RecordCount` is numeric, not a text string. Configure the count action to return a scalar count, or explicitly extract the count from the connector's response.
+
+The detailed-query action must exist only in the Yes branch. This is what prevents large result sets from being retrieved.
+
+## Step 5 — Return the correct message to the user
+
+In the No branch, construct a response using the actual count returned by SQL.
+
+For example:
+
+Example response for more than 100 records
+
+Your request matches 2,847 records. I have not executed the detailed query because the result exceeds the 100-row limit.
+
+Which filters would you like to apply?
+
+- A specific date/time range
+- A particular command, such as `HOLD`, `MVIN`, or `MOUT`
+- A specific operation (`OPER`)
+- A machine or operator
+- A specific `HISTCODE` or `TRANS`
+
+You can combine filters, for example: “Show HOLD events for lot ABC123 during the last 30 days.”
+
+Do not hardcode `2,847`; insert the actual `RecordCount` output from the flow.
+
+In the Yes branch, execute the main query and return the records. The agent can then use the knowledge bases to explain the results in manufacturing terms.
+
+## Step 6 — Connect the flow to the main agent
+
+Expose the flow as an action or tool available to your main agent.
+
+Configure the inputs to receive the query or validated filter specification and the count query. Configure the outputs to return:
+
+- `Status`
+- `RecordCount`
+- `ResultData`
+- `Message`
+
+The main agent should follow these rules:
+
+- `SUCCESS`: explain the returned records using the knowledge bases.
+- `TOO_MANY`: display the count and ask for filters. Do not retry the detail query.
+- `NO_RESULTS`: report that no matching records were found.
+- `ERROR`: explain that the query could not be completed; do not claim that no records exist.
+
+When the user supplies new filters, generate the updated query, call the flow again, and repeat the count check.
+
+## Step 7 — Test the workflow before deployment
+
+Use these test cases in Copilot Studio's test panel.
+
+| Test                                               | Expected behavior                                                                          |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Count = 0                                          | Report no matching records; skip detail query                                              |
+| Count = 1                                          | Execute detail query                                                                       |
+| Count = 100                                        | Execute detail query                                                                       |
+| Count = 101                                        | Return count and request filters; skip detail query                                        |
+| Count = 10,000                                     | Return count and request filters; skip detail query                                        |
+| Count query fails                                  | Report error; skip detail query                                                            |
+| User adds a date filter                            | Recount using the updated filters                                                          |
+| User explicitly requests duplicates                | Include duplicates only if that request is permitted and the query is adjusted accordingly |
+| User asks for all history without a lot identifier | Count the matching scope first; do not fetch the full detail set                           |
+
+For the tests involving counts of 0, 1, 100, and 101, use a controlled test dataset or test environment where you know the expected count.
+
+# 4. The more reliable alternative: use a stored procedure
+
+If you can change the SQL execution layer, this is my preferred production design.
+
+Instead of asking the agent to generate two independent SQL statements and trusting them to match, let the agent generate a structured filter specification, and let a SQL stored procedure enforce the count limit.
+
+The procedure would:
+
+1. Accept approved filters such as lot, date range, command, operation, machine, and operator.
+2. Apply the default duplicate exclusion.
+3. Count the matching rows.
+4. Return the count without returning history records when the count exceeds 100.
+5. Return the selected history columns when the count is between 1 and 100.
+6. Return a clear status when there are no results or an execution error.
+
+This design keeps the threshold in the database execution layer, where the agent cannot accidentally bypass it. It also avoids parsing arbitrary generated SQL to create a matching count query.
+
+One caveat: if the agent must answer unrestricted combinations of questions, the procedure needs a well-defined set of supported filters and sorting options. Do not accept raw user-provided SQL fragments as procedure parameters.
+
+## Which approach should you choose?
+
+Recommended for production: stored procedure + Agent Flow
+
+Best when you can modify the database and want consistent count enforcement, parameterized filters, and predictable results.
+
+Alternative: generated SQL + Agent Flow condition
+
+Useful if you must retain agent-generated SQL, provided the connector supports it and the execution layer validates queries, enforces read-only access, and prevents bypassing the count check.
+
+One final point: your 100-row limit protects against oversized result payloads, but it does not guarantee fast execution of the count query. For a large production history view, you should also evaluate the SQL execution plan and indexing or underlying view performance.
+
+My recommendation for your current setup: first replace the main agent instructions with the compact version, then implement the count-first flow. If you have permission to create a stored procedure in the production SQL environment, move the enforcement into that procedure rather than relying solely on prompt instructions.
