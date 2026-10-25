@@ -1,0 +1,502 @@
+ROLE
+You are a Semiconductor Manufacturing Historian Assistant.
+
+TASK
+Answer questions about lot history, lot movement, genealogy, operation progression, equipment activity, operator actions, dispatch activity, transitions, machine utilization, and manufacturing transaction history.
+
+Before generating any SQL:
+1. Call the MetaDataExtraction for getting the metadata of view ina variable called Output . Use this metadata for writing query.
+2. Use the "Database_Column_Dictionary" and "QnA" knowledge base to understand the business meaning of all relevant columns, codes, flags, values  the manufacturing context, lifecycle events, COMMANDs, HISTCODEs, operations, routes, and genealogy concepts as well the relevant columns to choose for different business questions.
+3. Generate the SQL query based on the business meaning of the data, not just column names using the Query  .
+4. After retrieving results, use both knowledge bases again to provide an accurate business interpretation.
+
+TOOLS AND KNOWLEDGE BASES
+
+1. Database_Column_Dictionary (Primary Reference)
+   - Contains business definitions, logic, valid values, and meanings for database columns.
+   - Always consult this knowledge base before writing SQL and before writing the Business Interpretation.
+   - Contains LOT lifecycle definitions, COMMAND meanings, HISTCODE meanings, operation concepts, genealogy rules, and manufacturing transaction context.
+   - Use this knowledge base to explain manufacturing events and lot progression.
+
+
+QUERY RULES
+
+1. Generate SQL first in a variable named Query.
+2. Use only:
+   TrainingVision.LotHistV
+3. Use DATE_TIME for all time-based filtering.
+4. Exclude duplicates by default:
+   IS_DUPLICATE = 0
+   unless the user explicitly requests duplicate analysis.
+5. Interpret user terminology as:
+   LOT:
+   - lot
+   - wafer
+   - batch
+
+   MACHINE:
+   - machine
+   - equipment
+   - tool
+
+   USER:
+   - operator
+   - employee
+   - technician
+   - who
+
+   OPERATION:
+   - operation
+   - process
+   - process step
+   - step
+
+6. Use TRANS to identify event types such as:
+   - MOVE IN
+   - MOVE OUT
+   - DISPATCH
+   - ARRIVAL
+   - TRANSITION
+   - LOCATION
+
+7. For lot history requests:
+
+   ORDER BY DATE_TIME, HISTORDER
+
+8. For latest or most recent events:
+
+   ORDER BY DATE_TIME DESC
+
+9. Never return duplicate records unless requested.
+
+10. Avoid SELECT * unless explicitly requested.
+
+COLUMN REFERENCE
+
+LOT
+- Manufacturing lot being tracked through the fab.
+
+OPER
+- Operation identifier representing the process step.
+
+OPERDESC
+- Human-readable operation description.
+
+COMMAND
+- Business transaction that generated the history record.
+
+HISTCODE
+- Specific event or attribute recorded by the transaction.
+
+HISTORDER
+- Sequence of history records within the same transaction context.
+
+MASK_LVL
+- Process layer or mask level associated with the operation.
+
+MACHINE
+- Equipment or tool associated with the activity.
+
+USERNAME / EMPID
+- Operator or employee associated with the transaction.
+
+DATE_TIME
+- Timestamp of the manufacturing event.
+
+TRANS
+- Normalized event type used to classify activity.
+
+HIST_REC
+- A code that identifies the type of historical transaction being logged or comments. Use it to understand the origin and purpose of the recorded event within the lot's processing history.
+
+BUSINESS INTERPRETATION RULES
+
+- Use COMMAND to explain what transaction occurred.
+- Use HISTCODE to explain the detailed event recorded.
+- Use OPER and OPERDESC to explain where the lot was in the manufacturing flow.
+- Use MASK_LVL when discussing process layers.
+- Use HISTORDER when reconstructing transaction sequences.
+- Use Database_Column_Dictionary definitions whenever explaining codes, statuses, attributes, flags, or business values.
+- Always explain results in manufacturing business language, not database language.
+
+OUTPUT FORMAT
+
+Query:
+[Generated SQL Query]
+
+Result:
+[Query output or summarized findings]
+
+Business Interpretation:
+[Manufacturing explanation using Database_Column_Dictionary]LOTHISTORY Business description and related fields:Executive SummaryField / Concept: LOTBusiness meaning: The unit of work processed through the fab. A lot contains one or more wafers and is the primary WIP and genealogy object.Field / Concept: OPERBusiness meaning: A specific process step on a route. It answers: where is the lot in the manufacturing flow?Field / Concept: COMMANDBusiness meaning: The transaction or system action performed against the lot. It answers: what action was taken?Field / Concept: HISTCODEBusiness meaning: The specific history event or attribute recorded by a command, such as MOVE IN, MOVE OUT, ROUTE, COMMENT, or LOT COMPLETE.Field / Concept: HISTORDERBusiness meaning: A field used in lot-history extracts to distinguish or order records that share the same transaction context. The exact database contract should be validated against the authoritative schema.Field / Concept: MASK_LVLBusiness meaning: An operation property associated with the process step. Internal documentation confirms operations have a mask level. It is the masking level that operations are associated with. It can also be thought of as layer.Field / Concept: OPERATION_DESCBusiness meaning: The human-readable operation description. OPER should be treated as the identifier; descriptions should be interpreted with route and historical context.1. LOT LifecycleWhat a LOT representsIn NetVision, a LOT is the unit of work processed through the fab. It contains one or more wafers, typically 25, and carries the information needed to manage current WIP position, route, operation, machine assignment, dispatch area, masks, priority, sales-order linkage, attributes, and manufacturing history.End-to-end business lifecycleStage: 1. Define product flowBusiness activity: A part is assigned to a route. The route contains an ordered sequence of runcards and operations.Typical records or outcomes: Approved route and operation sequence.Stage: 2. Create the lotBusiness activity: LotCreate establishes the lot with part, route, owner, wafer, mask, history, and initial WIP details. For applicable production lots, raw wafer inventory is decremented in Great Plains.Typical records or outcomes: LTCR command; CR, PT, RT, WF and related history entries.Stage: 3. Initial dispatchBusiness activity: After creation, eligible non-test-wafer lots are automatically dispatched to the first operation when required route-operation-machine and recipe information is available.Typical records or outcomes: Initial WIP and dispatch state.Stage: 4. Process through routeBusiness activity: The lot moves through operations using move-in and move-out activity. NetVision validates resources and captures genealogy, EDC, SPC, HIST_REC column handles comments or logs, status, and location history.Typical records or outcomes: MVIN/MOUT and movement-related history.Stage: 5. Handle exceptionsBusiness activity: The lot may be held, released, reworked, split, merged, repositioned, rerouted, or adjusted under business rules.Typical records or outcomes: HOLD, REWK, SPLT, LMRG, LRTE, LOPR and related history.Stage: 6. Stage for transferBusiness activity: The completed fabrication lot reaches the TRANSFER operation or staging area and must satisfy transfer validation, including applicable inspection and quality requirements.Typical records or outcomes: Transfer eligibility.Stage: 7. Complete and transferBusiness activity: LotTransfer marks the lot completed, records completion data, removes it from active WIP, and may create a finished-goods inventory transaction in Great Plains.Typical records or outcomes: TRNF command; LC history; closed-to-manufacturing state.Stage: 8. Reporting and downstream useBusiness activity: Completed lot information remains available for reporting, labels, quality, traceability, and genealogy.Typical records or outcomes: Reporting record and retained history.2. Operations and CommandsOPER: the process stepAn operation is a specific process step that a lot goes through. At minimum, an operation has an operation number, description, mask level, and dispatch area. Operations are ordered within runcards and routes. A lot is placed at the first route operation when created and progresses through the ordered flow.COMMAND: the transactionA command identifies the transaction or applications action that caused the lot-history records to be written. One command can generate multiple HISTCODE rows because a single business transaction may record several effects or attributes.Command: LTCRPlain-language name: Lot CreateRole in lifecycle: Creates a fabrication lot and its initial manufacturing records.Command: MVINPlain-language name: Move InRole in lifecycle: Records entry into processing at the current operation or machine.Command: MOUTPlain-language name: Move OutRole in lifecycle: Records completion or exit from the current processing step and may advance the lot.Command: DISPPlain-language name: DispatchRole in lifecycle: Assigns or requests a lot for processing.Command: HOLDPlain-language name: HoldRole in lifecycle: Changes or records lot hold status and HIST_REC column.Command: SPLTPlain-language name: Lot SplitRole in lifecycle: Creates a child lot or separates wafers from the original lot.Command: LMRGPlain-language name: Lot MergeRole in lifecycle: Combines eligible lots or quantities.Command: REWKPlain-language name: ReworkRole in lifecycle: Routes a full or partial lot through an approved rework path.Command: LOPRPlain-language name: Change Lot OperationRole in lifecycle: Adjusts the lot to another operation under business rules.Command: LRTEPlain-language name: Change Lot RouteRole in lifecycle: Changes the route and records associated operation/route effects.Command: RPOSPlain-language name: RepositionRole in lifecycle: Repositions or requests the lot within an operation.Command: SETP/SETEPlain-language name: Set Production / Engineering FlagsRole in lifecycle: Updates production- or engineering-controlled lot attributes.Command: RPURPlain-language name: Repurpose LotRole in lifecycle: Recreates scrap material for approved engineering use.Command: TRNFPlain-language name: TransferRole in lifecycle: Completes and closes the lot and performs the final manufacturing-to-inventory handoff when configured.Interpretation rule: Use OPER to understand process position, COMMAND to understand the initiating transaction, and HISTCODE to understand each detailed effect recorded by that transaction.3. History Codes and OrderHISTCODEHISTCODE identifies the specific event, attribute, or state change written to lot history. The command-to-history mapping shows that the same HISTCODE can appear under different commands and that one command commonly produces several history rows.Code: CRHistory label: CREATE LOTBusiness description: Creation of the lot.Code: INHistory label: MOVE INBusiness description: Lot entered processing.Code: MVHistory label: MOVE OUTBusiness description: Lot exited or completed a processing step.Code: TXHistory label: TRANSITIONBusiness description: Lot is transitioning into move-in.Code: LAHistory label: ARRIVALBusiness description: Lot arrived at an operation.Code: DLHistory label: DISPATCHBusiness description: Lot was dispatched.Code: SK/SAHistory label: SKIP OPER / Auto SkipBusiness description: Operation was skipped manually or automatically.Code: RTHistory label: ROUTEBusiness description: Route associated with or changed for the lot.Code: OPHistory label: ADJ OPERBusiness description: Operation adjustment.Code: SPHistory label: SPLIT LOTBusiness description: Lot split transaction.Code: MM/MQHistory label: MERGE LOTS / MERGE QTYBusiness description: Lot merge and resulting quantity.Code: RWHistory label: REWORKBusiness description: Lot rework.Code: R1/R2History label: RTE LEAVE/RTE RETURNBusiness description: Departure from and return to the main route.Code: HCHistory label: HOLD CODEBusiness description: Lot hold status or reason.Code: LSHistory label: CHG STATUSBusiness description: Lot status change.Code: CM/CAHistory label: COMMENT/ Automation CommentBusiness description: User or automated explanatory comment.Code: PTHistory label: PART NUMBusiness description: Lot part number.Code: MRHistory label: MASK/REVBusiness description: Mask number or revision associated with the lot.Code: OWHistory label: OWNERCODEBusiness description: Lot owner code.Code: DDHistory label: DUE DATEBusiness description: Lot due date.Code: HTHistory label: HOT STATUSBusiness description: Hot-lot flag or priority status.Code: SOHistory label: SALES ORDRBusiness description: Sales-order association.Code: QI/QD/QEHistory label: Quality Incident / Description / EventBusiness description: Quality event and supporting description.Code: SCHistory label: ADHOCSCRAPBusiness description: Ad hoc wafer scrap.Code: UNHistory label: UNSCRAPBusiness description: Previously scrapped wafers were restored.Code: LCHistory label: LOTCOMPLETBusiness description: Lot completed during transfer.HISTORDERMultiple lines were needed for the history entry. This is the order that they were entered.4. Other Key FieldsMASK_LVLThis is the Mask level or the layer. Masks are used to define objects/structures. Different layers build different parts of the components.OPER and OPERATION_DESCOPER is the operation identifier or number of a step on a route. OPERATION_DESC is the display description is the human readble text associated with an operation in a route. Operation number and description are separate operation properties.5. How to Read a Lot-History RowField: LOTExample: 6053A0K9Interpretation: The manufacturing lot whose history is being described.Field: OPERExample: 50325Interpretation: The process operation associated with the event.Field: OPERATION DESCExample: LOW_TEMPInterpretation: The human-readable operation description captured in the extract.Field: COMMANDExample: MOUTInterpretation: The transaction was a Move-Out.Field: HISTCODEExample: MVInterpretation: The detailed history event was MOVE OUT.Field: HISTORDERExample: 1Interpretation: Order/differentiation within the transaction context; exact semantics require schema confirmation.Field: MASK LVLExample: 026Interpretation: Operation mask/process-layer value; exact encoding requires data-dictionary confirmation.Field: HIST_RECExample: QTY: 25Interpretation: Additional business detail recorded with the event. Lot_History_Questions_Expected_Answers.docx There are 2 Knowledge base attached 1st is Lot history questions and expected ansers also information about some columns and values in the view on whcich query is being done . There is another agent which gives the metadata of the view after which the main agents generates the query and display the rsult . I wnt to optimise the instruction of the main agent . based on the current information make i compact and remove unncessary stuffs . Also I am facing another issue which is error too much data toohandle . Whta i want is whatever data is requested by the user first query the count of it . If the count is more than 100 rows then show the user that the requested data has x number of rows . SO any filters thy want to apply tp narrow it down be it date time  filter , command or any other columns having filters can be applied to shorten the search space and then work on execution of query . I want to implement this in the agent suggest me the best ways to do so either give the prpoper instruction to replace in the agent or design the detailed steps to set this up using agent flow in microsoft colpilot studio .
+Your current prompt is doing 3 jobs at once:
+
+Metadata retrieval
+SQL generation
+Business interpretation
+
+That makes the LLM consume a lot of tokens and is likely contributing to the "Too Much Data To Handle" issue.
+
+My recommendation is:
+
+Solution 1 (Recommended): Add a Pre-Query Count Validation Layer
+
+Instead of directly executing the query generated by the agent:
+
+Step 1
+
+User asks:
+
+Show complete history of lot ABC123
+
+Step 2
+
+Agent generates the actual SQL filter.
+
+Example:
+
+SELECT
+    LOT,
+    DATE_TIME,
+    COMMAND,
+    HISTCODE,
+    OPER,
+    OPERDESC,
+    MACHINE
+FROM TrainingVision.LotHistV
+WHERE LOT = 'ABC123'
+    AND IS_DUPLICATE = 0
+
+Step 3
+
+Automatically generate COUNT query first:
+
+SELECT COUNT(*) AS RecordCount
+FROM TrainingVision.LotHistV
+WHERE LOT = 'ABC123'
+    AND IS_DUPLICATE = 0
+
+Step 4
+
+Decision Logic
+
+IF Count <= 100
+    Execute actual query
+ELSE
+    Stop execution
+    Inform user
+
+
+Example response:
+
+Your request would return 2,847 records.
+
+To improve performance, please refine the search using one or more filters:
+
+• Date range
+• Operation (OPER)
+• Command (MVIN, MOUT, HOLD, DISP)
+• Machine
+• User
+• HistCode
+• Last N days
+
+Examples:
+
+Show lot ABC123 for last 30 days
+Show only HOLD events for lot ABC123
+Show history for operation 50325 only
+
+
+This is the cleanest and most scalable approach.
+
+Optimized Main Agent Prompt
+
+Below is what I would replace your current agent instructions with.
+
+Semiconductor Manufacturing Historian Assistant
+Purpose
+
+Answer questions related to:
+
+Lot History
+Lot Movement
+Genealogy
+Operations
+Equipment Activity
+Operator Actions
+Dispatch Activity
+Manufacturing Transactions
+Route Progression
+Holds, Rework, Split, Merge and Transfer Events
+Data Sources
+
+Before generating SQL:
+
+Step 1
+
+Execute:
+
+MetaDataExtraction
+
+
+Store output as:
+
+Output
+
+
+Use metadata to identify:
+
+Available columns
+Data types
+View structure
+Step 2
+
+Consult:
+
+Database_Column_Dictionary
+
+
+and
+
+QnA
+
+
+to understand:
+
+Business meaning of columns
+COMMAND values
+HISTCODE values
+Lifecycle concepts
+Genealogy relationships
+Operations and route logic
+
+Generate queries based on business meaning, not column names alone.
+
+Query Rules
+Allowed Object
+TrainingVision.LotHistV
+
+
+Only.
+
+Time Filtering
+
+Always use:
+
+DATE_TIME
+
+
+for date filters.
+
+Duplicate Handling
+
+Exclude duplicates by default:
+
+IS_DUPLICATE = 0
+
+
+unless duplicate analysis is explicitly requested.
+
+Synonyms
+
+LOT:
+
+lot
+wafer lot
+batch
+
+
+MACHINE:
+
+machine
+equipment
+tool
+
+
+USER:
+
+operator
+employee
+technician
+who
+
+
+OPERATION:
+
+operation
+step
+process
+process step
+
+Event Types
+
+Use TRANS where appropriate:
+
+MOVE IN
+MOVE OUT
+DISPATCH
+ARRIVAL
+TRANSITION
+LOCATION
+
+Sorting
+
+Lot history:
+
+ORDER BY DATE_TIME, HISTORDER
+
+
+Latest event:
+
+ORDER BY DATE_TIME DESC
+
+Select Columns
+
+Never use:
+
+SELECT *
+
+
+Only return required columns.
+
+Large Result Protection
+
+Before executing the final query:
+
+Generate Count Query
+SELECT COUNT(*)
+
+
+using the same filters.
+
+Decision Rules
+
+If:
+
+Count <= 100
+
+
+Execute query.
+
+If:
+
+Count > 100
+
+
+Do NOT run the main query.
+
+Instead return:
+
+The request would return <count> rows.
+
+Please narrow the search using filters such as:
+
+• Date range
+• Operation
+• Command
+• HistCode
+• Machine
+• User
+
+Example:
+- Last 30 days
+- HOLD events only
+- Operation 50325 only
+
+Response Format
+Query
+[Generated SQL]
+
+Result
+[Returned data or summary]
+
+Business Interpretation
+
+Use:
+
+COMMAND
+HISTCODE
+OPER
+OPERDESC
+MASK_LVL
+HISTORDER
+
+Explain events in manufacturing language using definitions from Database_Column_Dictionary.
+
+Do not describe database fields. Explain what occurred in the manufacturing process.
+
+Copilot Studio Flow Design (Best Architecture)
+
+Instead of letting one agent do everything:
+
+Agent
+
+Intent Detection
+
+↓
+
+Tool 1
+
+MetaDataExtraction
+
+↓
+
+Tool 2
+
+Generate SQL
+
+↓
+
+Tool 3
+
+Execute COUNT Query
+
+↓
+
+Condition
+Count > 100?
+
+YES
+
+Return refinement message
+
+Result set contains 2,384 rows.
+Please provide more filters.
+
+NO
+
+Execute Main Query
+
+↓
+
+Business Interpretation
+
+↓
+
+Return Answer
+
+Additional Optimization
+
+Your prompt currently contains very large COMMAND and HISTCODE definitions.
+
+Move those into the Knowledge Base only.
+
+The agent instructions should simply say:
+
+Use Database_Column_Dictionary as the authoritative source for:
+
+- COMMAND definitions
+- HISTCODE meanings
+- Lifecycle concepts
+- Genealogy definitions
+- Lot status interpretations
+
+
+Removing the huge command/history-code section can reduce prompt size by 60-70%, which directly improves response quality and reduces token consumption.
+
+For Copilot Studio specifically, I would implement the flow as:
+
+User → Metadata Tool → SQL Generator → Count Query Check → Conditional Branch (>100 rows) → Execute Query → Business Interpretation → Response
+
+This pattern is what most production-grade Fabric/SQL Copilot agents use to avoid large result-set failures.
