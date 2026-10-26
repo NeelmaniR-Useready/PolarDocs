@@ -1,0 +1,101 @@
+MetaDataDetails
+
+The complete TrainingVision.LotHistV metadata inspection and required sample-row check are below.
+
+View definition
+
+
+CREATE VIEW [TrainingVision].[LotHistV]
+AS
+SELECT
+    H.LOT,
+    H.DATE_TIME,
+    H.HISTORDER,
+    C.HISTTRANS AS TRANS,
+    H.OPER,
+    H.MASK_LVL,
+    H.OPERDESC,
+    CONCAT(CAST(H.MASK_LVL AS VARCHAR(50)), '.', H.OPERDESC) AS OPERLONGDESC,
+    H.MACHINE,
+    H.USERNAME,
+    TrainingVision.PF_LOTHIST_HISTORY3(H.HISTCODE, H.COMMENT) AS HIST_REC,
+    H.HISTCODE,
+    H.COMMAND,
+    C.SHORTREPORT,
+    C.VIEWFLAG,
+    CASE
+        WHEN H.EMPID IN ('00000', '99999', 'SYSTM') THEN 0
+        ELSE 1
+    END AS Is_Person,
+    H.IS_DUPLICATE,
+    H.EMPID
+FROM [Polar_Lakehouse_POC].[VisionProd].[dbo.LOTHIST] H
+INNER JOIN [Polar_Lakehouse_POC].[VisionProd].[dbo.HISTCODES] C
+    ON C.HISTCODE = H.HISTCODE
+WHERE C.VIEWFLAG IN ('E', 'I');
+Column metadata
+
+
+#   Column         Type       MaxLen  Precision  Scale  Nullable
+1   LOT            varchar      8000      0        0      Yes
+2   DATE_TIME      datetime2        8     26        6      Yes
+3   HISTORDER      smallint         2      5        0      Yes
+4   TRANS          varchar      8000      0        0      Yes
+5   OPER           int              4     10        0      Yes
+6   MASK_LVL       varchar      8000      0        0      Yes
+7   OPERDESC       varchar      8000      0        0      Yes
+8   OPERLONGDESC   varchar      8000      0        0      No
+9   MACHINE        varchar      8000      0        0      Yes
+10  USERNAME       varchar      8000      0        0      Yes
+11  HIST_REC       varchar        45      0        0      Yes
+12  HISTCODE       varchar      8000      0        0      Yes
+13  COMMAND        varchar      8000      0        0      Yes
+14  SHORTREPORT    varchar      8000      0        0      Yes
+15  VIEWFLAG       varchar      8000      0        0      Yes
+16  Is_Person      int              4     10        0      No
+17  IS_DUPLICATE   bit              1      1        0      Yes
+18  EMPID          varchar      8000      0        0      Yes
+All requested fields are present. There is no explicit STATUS column in this view. The fields that can describe the latest lot state/event are primarily TRANS, COMMAND, HISTCODE, HIST_REC, SHORTREPORT, and VIEWFLAG, with DATE_TIME and HISTORDER available for sequencing. IS_DUPLICATE can be used when evaluating duplicate history entries.
+
+Entire sample-row result
+
+
+Row 1
+COMMAND:       DISP
+DATE_TIME:     2026-09-02T12:24:35.33
+EMPID:         SYSTM
+HIST_REC:      QTY: 25
+HISTCODE:      DL
+HISTORDER:     1
+IS_DUPLICATE:  false
+Is_Person:     0
+LOT:           6053A0G8
+MACHINE:       MERCURY1
+MASK_LVL:      043
+OPER:          70126
+OPERDESC:      STRIP_W(1)
+OPERLONGDESC:  043.STRIP_W(1)
+SHORTREPORT:   N
+TRANS:         DISPATCH
+USERNAME:      SYSTEM
+VIEWFLAG:      I
+
+Row 2
+COMMAND:       DISP
+DATE_TIME:     2026-09-02T12:24:35.33
+EMPID:         SYSTM
+HIST_REC:      Dispatched by Local Rules.
+HISTCODE:      CM
+HISTORDER:     1
+IS_DUPLICATE:  false
+Is_Person:     0
+LOT:           6053A0G8
+MACHINE:       MERCURY1
+MASK_LVL:      043
+OPER:          70126
+OPERDESC:      STRIP_W(1)
+OPERLONGDESC:  043.STRIP_W(1)
+SHORTREPORT:   Y
+TRANS:         COMMENT
+USERNAME:      SYSTEM
+VIEWFLAG:      E
