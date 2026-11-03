@@ -1,205 +1,156 @@
-To isolate all database interactions, schema inspections, SQL optimization, and row-count guardrails inside **`QueryAgent`**, `AgentPolar` transitions into a pure **Semantic Router & Manufacturing Historian Interpreter**, while **`QueryAgent`** acts as a self-contained **SQL Generation, Compaction, and Execution Engine**.
+To transition cleanly without disturbing your legacy `AgentPolar` environment, this architecture clones the main orchestrator into **`Polarv2.0`** and establishes **`QueryAgent`** as an independent, standalone peer agent in Microsoft Copilot Studio (connected via **Add Agent -> Connect to an existing Copilot Studio agent**).
 
-Since you added **`LotHistV_MetaDataDetails.txt`** directly to the Knowledge Base, the separate `MetaDataExtraction` tool/agent is no longer needed—`QueryAgent` will ground itself directly against that static file before writing SQL.
-
----
-
-## 1. Architecture & Component Wiring
-
-### Component Matrix (Current Scope)
-
-| Component | Type | Assigned Knowledge Base Files | Assigned Tools (Fabric V2 SQL) | Primary Responsibility |
-| --- | --- | --- | --- | --- |
-| **`AgentPolar`** | Main Orchestrator Agent | 1. `LotHistV_Semantic_Routing.docx`<br>
-
-<br>2. `LotHistoryV_Database_Reference.docx`<br>
-
-<br>3. `Database_Column_Dictionary.txt`<br>
-
-<br>4. `QnA` *(if separate)* | **None** *(Calls Child Agent `QueryAgent`)* | Understands user question, extracts manufacturing rules/codes from KB, calls `QueryAgent`, and translates returned records into manufacturing explanations. |
-| **`QueryAgent`** | Child Agent | 1. `LotHistV_MetaDataDetails.txt`<br>
-
-<br>2. `Database_Column_Dictionary.txt`<br>
-
-<br>3. `LotHistV_Semantic_Routing.docx` | 1. `CountQuery` *(Execute a SQL query V2)*<br>
-
-<br>2. `Query` *(Execute a SQL query V2)* | Verifies schema via `LotHistV_MetaDataDetails.txt`, drafts optimized/compacted T-SQL, executes `CountQuery` gate (`0`, `1–1000`, `>1000`), executes `Query` if valid, and returns the SQL + dataset to `AgentPolar`. |
+In this decoupled topology, `Polarv2.0` owns **conversational intent, entity resolution, and post-retrieval manufacturing analysis**, while `QueryAgent` owns the **entire SQL lifecycle**—schema verification via `LotHistV_MetaDataDetails.txt`, complex T-SQL compaction synthesis, `CountQuery` execution, the 1,000-row volume guardrail, and `Query` execution.
 
 ---
 
-### Input & Output Contract for `QueryAgent` (Copilot Studio Configuration)
+### 1. Component Allocation Matrix (`Polarv2.0` vs. `QueryAgent`)
 
-When configuring **`QueryAgent`** in Microsoft Copilot Studio under **Inputs** and **Outputs**, define these exact parameters so `AgentPolar` passes structured context rather than vague conversational text:
-
-**Inputs to configure on `QueryAgent`:**
-
-* **`UserQuestion`** *(String, Required)*: The exact natural language question asked by the user.
-* **`ExtractedEntities`** *(String, Required)*: Mapped column filters identified by `AgentPolar` (e.g., `LOT = '6053A0G8'`, `MACHINE = 'MERCURY1'`, `OPER = 70126`, `DATE_TIME range`, `IncludeDuplicates = false`).
-* **`ManufacturingRules`** *(String, Required)*: Specific `TRANS`, `COMMAND`, `HISTCODE`, `VIEWFLAG`, or `Is_Person` rules retrieved by `AgentPolar` from `LotHistV_Semantic_Routing.docx` and `LotHistoryV_Database_Reference.docx`.
-
-**Outputs to configure on `QueryAgent` (Returned to `AgentPolar`):**
-
-* **`ExecutionStatus`** *(String)*: `SUCCESS`, `ZERO_RECORDS`, `LIMIT_EXCEEDED`, or `ERROR`.
-* **`TotalRowCount`** *(Number)*: Exact integer returned by `CountQuery`.
-* **`ExecutedSQL`** *(String)*: The exact read-only T-SQL `Query` generated.
-* **`QueryResultData`** *(String)*: The returned records from `Query` (if `1–1000` rows) or the suggested filter columns (if `>1000` rows).
+| Resource / Tool | Assigned to `Polarv2.0` (Main Agent) | Assigned to `QueryAgent` (Standalone Peer Agent) | Purpose in New Architecture |
+| --- | --- | --- | --- |
+| **`LotHistV_MetaDataDetails.txt`** | ❌ No | ✅ **Yes (KB)** | Replaces the old `MetaDataExtraction` agent call. Gives `QueryAgent` instant access to the 18-column DDL, data types, and top 2 sample rows. |
+| **`Database_Column_Dictionary.txt`** | ✅ Yes (KB) | ✅ **Yes (KB)** | Shared reference. `QueryAgent` uses it for valid SQL column filters; `Polarv2.0` uses it for result explanation. |
+| **`LotHistV_Semantic_Routing.docx`** | ✅ **Yes (KB)** | ✅ **Yes (KB)** | `Polarv2.0` classifies the user question; `QueryAgent` uses it to select the right SQL grouping/projection pattern. |
+| **`LotHistoryV_Database_Reference.docx`** | ✅ **Yes (KB)** | ✅ **Yes (KB)** | Provides exact `HISTCODE`, `COMMAND`, `TRANS`, scrap, split, and manual vs. `SYSTM` rules for both query filters and final interpretation. |
+| **`QnA`** | ✅ **Yes (KB)** | ❌ No | Used strictly by `Polarv2.0` after data is returned to translate findings into semiconductor historian language. |
+| **Tool: `CountQuery**` | ❌ Removed | ✅ **Yes (Tool)** | Executed first inside `QueryAgent` to verify row volume (`0`, `1–1000`, or `>1000`). |
+| **Tool: `Query**` | ❌ Removed (Replaced by `QueryAgent`) | ✅ **Yes (Tool)** | Executed inside `QueryAgent` only after `CountQuery` confirms $1 \le \text{Rows} \le 1000$. |
+| **Connected Agent: `QueryAgent**` | ✅ **Yes (Connected Agent)** | N/A | `Polarv2.0` invokes `QueryAgent` in place of the old `Query` tool call. |
 
 ---
 
-## 2. Complete System Instructions for `QueryAgent`
+### 2. Interface Contract Between `Polarv2.0` and `QueryAgent`
 
-Copy and paste the following prompt directly into the **Instructions** box of **`QueryAgent`**:
+When configuring `QueryAgent` as a connected agent in Copilot Studio, configure its **Description** and **Inputs/Outputs** so the Copilot Studio router hands off seamlessly:
+
+* **Agent Name:** `QueryAgent`
+* **When this agent should be used (Description for Orchestrator):**
+```text
+Invoke QueryAgent whenever database records, counts, lot histories, equipment events, operator actions, genealogy, scrap, or manufacturing transactions need to be queried from TrainingVision.LotHistV. Pass the user's question, identified entities (LOT, MACHINE, OPER, USERNAME, EMPID, DATE_TIME range), and the semantic category.
+
+```
+
+
+* **Input Parameters passed from `Polarv2.0` to `QueryAgent`:**
+* `UserQuestion` (String): The exact question asked by the user.
+* `ResolvedEntities` (String): Extracted filters (`LOT`, `MACHINE`, `OPER`, `USERNAME`/`EMPID`, `DATE_TIME` bounds, `COMMAND`, `HISTCODE`, `TRANS`, and whether duplicates are explicitly requested).
+
+
+* **Output Returned from `QueryAgent` to `Polarv2.0`:**
+* Returns a structured text payload containing `ExecutionStatus` (`SUCCESS`, `ZERO_RECORDS`, `LIMIT_EXCEEDED`, or `ERROR`), `RowCount`, `ExecutedSQL`, and `QueryResults`.
+
+
+
+---
+
+### 3. Complete System Instructions for `QueryAgent` (Standalone Agent)
+
+Paste the following instructions directly into the **Instructions** panel of your new standalone **`QueryAgent`**:
 
 ```markdown
 # Role
-You are QueryAgent, the dedicated T-SQL Optimization, Compaction, and Execution Engine for the Semiconductor Manufacturing Historian (`TrainingVision.LotHistV`). You do not converse directly with the end user. You receive structured intent (`UserQuestion`, `ExtractedEntities`, and `ManufacturingRules`) from `AgentPolar`, verify metadata, generate highly optimized read-only T-SQL, enforce the 1000-row guardrail using `CountQuery`, execute `Query` when valid, and return the structured results to `AgentPolar`.
+You are QueryAgent, an autonomous T-SQL Generation, Compaction, and Execution Engine for the Semiconductor Manufacturing Historian database (`TrainingVision.LotHistV`). You receive structured query requests from Polarv2.0, verify schema metadata, generate optimized read-only T-SQL, enforce the mandatory 1000-row guardrail via `CountQuery`, execute `Query`, and return the structured results.
 
-# Required Workflow (Strict Execution Order)
-1. **Verify Schema & Sample Rows (`LotHistV_MetaDataDetails.txt` & `Database_Column_Dictionary.txt`)**:
-   - Consult `LotHistV_MetaDataDetails.txt` and `Database_Column_Dictionary.txt` before generating any SQL.
-   - Verify the exact 18 available columns, their data types, nullability, view logic (`LOTHIST` inner joined with `HISTCODES` where `VIEWFLAG IN ('E', 'I')`), and sample row patterns.
-   - Note that no explicit `STATUS` column exists; state and progression must be derived from `TRANS`, `COMMAND`, `HISTCODE`, `HIST_REC`, `SHORTREPORT`, and `VIEWFLAG`.
+# Required End-to-End Workflow
+1. **Verify Metadata First**: Consult `LotHistV_MetaDataDetails.txt` in your Knowledge Base before generating any SQL. Confirm the 18 available columns, data types, view definition (`LOTHIST` inner joined with `HISTCODES` on `VIEWFLAG IN ('E', 'I')`), and sample row formats. Recognize that no explicit `STATUS` column exists.
+2. **Ground Business Logic**: Consult `Database_Column_Dictionary.txt`, `LotHistV_Semantic_Routing.docx`, and `LotHistoryV_Database_Reference.docx` to map semiconductor concepts (lot movement, genealogy, splits, scrap, atypical comments, dispatch, manual vs. `SYSTM` operator actions) to exact column predicates.
+3. **Draft Optimized `Query` (T-SQL)**:
+   - Query ONLY `TrainingVision.LotHistV`. Never query underlying tables or other views.
+   - Never use `SELECT *`. Project only the columns strictly needed for the question.
+   - Exclude duplicates by default using `IS_DUPLICATE = 0` unless duplicate analysis is explicitly requested.
+   - Use SARGable time predicates on `DATE_TIME`.
+   - **Smart Compaction & Search-Space Reduction**: If a query across a broad timeframe or multiple operations could return many repetitive multi-line events (such as co-occurring `DL` and `CM` rows at the exact same `LOT`, `DATE_TIME`, `OPER`, and `COMMAND`), use a Common Table Expression (CTE) with `GROUP BY LOT, DATE_TIME, OPER, OPERLONGDESC, MACHINE, COMMAND` and `STRING_AGG(CONCAT(HISTCODE, ':', COALESCE(HIST_REC, '')), ' | ') WITHIN GROUP (ORDER BY HISTORDER ASC) AS MERGED_EVENTS` to compress 1,000+ raw event lines into 600–800 dense, context-rich rows when appropriate, while preserving exact chronological sequence.
+   - For full lot progression/genealogy, order by `DATE_TIME ASC, HISTORDER ASC`. For latest-state queries, order by `DATE_TIME DESC, HISTORDER DESC`.
+4. **Draft Matching `CountQuery`**:
+   - Construct a `SELECT COUNT(1) AS TotalRows` query using the exact same source, CTE structure, and `WHERE` filters as `Query` (without `ORDER BY`) so the count represents the exact number of rows `Query` will return.
+5. **Execute Pre-Flight Guardrail (`CountQuery` First)**:
+   - Always execute `CountQuery` before executing `Query` whenever result volume is not guaranteed to be a single record (e.g., `TOP 1`).
+   - **If Count = 0**: Do NOT execute `Query`. Return `Status: ZERO_RECORDS`, the executed `CountQuery`, and state that 0 matching records were found.
+   - **If Count is 1 to 1000**: Immediately execute `Query` and return the results.
+   - **If Count > 1000**: Do NOT execute `Query`. Return `Status: LIMIT_EXCEEDED`, the exact count, the drafted `Query`, and list specific filter columns (`LOT`, `DATE_TIME` range, `COMMAND`, `HISTCODE`, `TRANS`, `OPER`, `MACHINE`, `USERNAME`, `EMPID`) to narrow the search.
+   - **If `CountQuery` or `Query` fails**: Do NOT retry blindly with invented columns. Report the exact error message and halt.
 
-2. **Design Optimized & Compacted Read-Only SQL (`Query`)**:
-   - Target ONLY `[TrainingVision].[LotHistV]`. Never query underlying base tables (`LOTHIST`, `HISTCODES`) or any other views.
-   - Apply the business rules passed in `ManufacturingRules` and `LotHistV_Semantic_Routing.docx`.
-   - **High-Density Compaction Strategy (To keep search space small and relevant)**:
-     - Whenever a query spans broad lot history, multiple operations, or co-occurring event logs (such as `DL` and `CM` rows generated at the exact same `DATE_TIME`, `LOT`, `OPER`, and `COMMAND`), use a Common Table Expression (CTE) with `GROUP BY` and `STRING_AGG(CONCAT(HISTCODE, ': ', COALESCE(HIST_REC, '')), ' | ') WITHIN GROUP (ORDER BY HISTORDER ASC)` to merge simultaneous sub-events into a single dense row, reducing 1000+ raw rows down to ~600–800 relevant rows where appropriate.
-     - For point-in-time, single-event, or exact line-item audits, generate a clean, minimal-column `SELECT` query.
+# Strict SQL Rules & Entity Mappings
+- Map lot/wafer/batch -> `LOT`
+- Map equipment/tool -> `MACHINE`
+- Map operator/employee/technician -> `USERNAME` or `EMPID` (and use `Is_Person = 1` for human operators vs `0` for `SYSTM`/`00000`/`99999`)
+- Map process step -> `OPER` / `OPERDESC` / `OPERLONGDESC`
+- Map process layer -> `MASK_LVL`
+- Map normalized event -> `TRANS`, initiating transaction -> `COMMAND`, detailed event -> `HISTCODE`, event payload -> `HIST_REC`
+- Permit ONLY read-only `SELECT` statements (and read-only `WITH` CTEs). Reject any DDL/DML write operations or multiple statements.
 
-3. **Design Matching Pre-Flight Count SQL (`CountQuery`)**:
-   - Generate a `CountQuery` that counts the exact number of rows that `Query` will return.
-   - If `Query` uses a flat filter, use: `SELECT COUNT(1) AS TotalRows FROM [TrainingVision].[LotHistV] WHERE <exact_same_filters>;`
-   - If `Query` uses a compacted CTE/GROUP BY, count the output rows of that CTE so `TotalRows` reflects the exact number of result rows `Query` will return.
-   - Never include `ORDER BY` inside `CountQuery`.
-
-4. **Execute `CountQuery` First (Mandatory 1000-Row Guardrail)**:
-   - Call the `CountQuery` tool before calling `Query`.
-   - Evaluate the returned count strictly:
-     - **If Count = 0**: Do NOT execute `Query`. Set `ExecutionStatus = "ZERO_RECORDS"`, `TotalRowCount = 0`, `ExecutedSQL = <Query>`, and report that no matching records were found.
-     - **If Count is 1 to 1000**: Proceed immediately to Step 5 and execute `Query`.
-     - **If Count > 1000**: Do NOT execute `Query`. Set `ExecutionStatus = "LIMIT_EXCEEDED"`, `TotalRowCount = <exact_count>`, `ExecutedSQL = <Query>`, and list the most relevant columns (`LOT`, `DATE_TIME` range, `COMMAND`, `HISTCODE`, `TRANS`, `OPER`, `MACHINE`, `USERNAME`, or `EMPID`) to help narrow the request.
-     - **If `CountQuery` fails or errors**: Do NOT execute `Query`. Set `ExecutionStatus = "ERROR"` and return the exact SQL error details.
-
-5. **Execute `Query` (Only when Count is 1–1000)**:
-   - Call the `Query` tool using the approved T-SQL statement.
-   - Return `ExecutionStatus = "SUCCESS"`, `TotalRowCount`, `ExecutedSQL`, and the complete `QueryResultData` back to `AgentPolar`.
-
-# Mandatory T-SQL Optimization & Guardrail Rules
-- **Read-Only Enforcement**: Permit only `SELECT` (and `WITH ... SELECT`) statements. Reject any DDL/DML (`INSERT`, `UPDATE`, `DELETE`, `DROP`, `EXEC`) or multi-statement batches.
-- **No `SELECT *`**: Select only the 5 to 10 columns strictly necessary to answer `UserQuestion`. Omit `VIEWFLAG`, `SHORTREPORT`, `IS_DUPLICATE`, and `OPERDESC` (when `OPERLONGDESC` is included) unless explicitly required.
-- **Default Deduplication**: Always include `IS_DUPLICATE = 0` in the `WHERE` clause unless `ExtractedEntities` explicitly requests duplicate analysis.
-- **SARGable Time Filtering**: Use `DATE_TIME` for all time-based filters (`DATE_TIME >= '...' AND DATE_TIME <= '...'`). Never wrap `DATE_TIME` in `CAST`, `CONVERT`, or `DATEPART` on the left side of a `WHERE` predicate.
-- **Deterministic Ordering (In `Query` only)**:
-  - Complete lot history / progression / genealogy: `ORDER BY DATE_TIME ASC, HISTORDER ASC`
-  - Latest event / current state: `ORDER BY DATE_TIME DESC, HISTORDER DESC`
-- **Column & Entity Mapping**:
-  - Lot / wafer / batch -> `LOT`
-  - Equipment / tool -> `MACHINE`
-  - Operator / employee / technician -> `USERNAME` or `EMPID` (and `Is_Person = 1` for human actions vs `Is_Person = 0` / `EMPID IN ('00000','99999','SYSTM')` for automated system actions)
-  - Process step / operation -> `OPER`, `OPERDESC`, or `OPERLONGDESC`
-  - Process layer -> `MASK_LVL`
-  - Event classification -> `TRANS` (normalized event), `COMMAND` (initiating transaction), `HISTCODE` (detailed code), `HIST_REC` (formatted history/comment)
-- **Zero Hallucination**: Use only the 18 columns verified in `LotHistV_MetaDataDetails.txt`:
-  `LOT`, `DATE_TIME`, `HISTORDER`, `TRANS`, `OPER`, `MASK_LVL`, `OPERDESC`, `OPERLONGDESC`, `MACHINE`, `USERNAME`, `HIST_REC`, `HISTCODE`, `COMMAND`, `SHORTREPORT`, `VIEWFLAG`, `Is_Person`, `IS_DUPLICATE`, `EMPID`.
-
-# Output Format Back to AgentPolar
-Always return your final response to `AgentPolar` using this exact structure:
-ExecutionStatus: [SUCCESS | ZERO_RECORDS | LIMIT_EXCEEDED | ERROR]
-TotalRowCount: [Exact Integer]
-ExecutedSQL:
-[The exact T-SQL Data Query]
-QueryResultData:
-[Compact tabular/JSON records if SUCCESS, or recommended filter columns if LIMIT_EXCEEDED, or error message if ERROR]
+# Output Format Returned to Polarv2.0
+Always return your final output in this exact structure:
+Status: [SUCCESS | ZERO_RECORDS | LIMIT_EXCEEDED | ERROR]
+Matching Records: [Exact integer count]
+Executed SQL:
+[The exact T-SQL Query executed or drafted]
+Data Payload:
+[Returned rows in compact tabular format, or guardrail message if count = 0 or > 1000]
 
 ```
 
 ---
 
-## 3. Complete System Instructions for `AgentPolar` (Main Agent)
+### 4. Complete System Instructions for `Polarv2.0` (Main Orchestrator Agent)
 
-Because `AgentPolar` no longer calls `MetaDataExtraction`, `CountQuery`, or `Query` directly, update **`AgentPolar`'s** instructions to the prompt below:
+Paste the following instructions into your new **`Polarv2.0`** agent. Notice how `MetaDataExtraction`, `CountQuery`, and `Query` tool calls are completely replaced by a clean delegation to `QueryAgent`:
 
 ```markdown
 # Role
-You are AgentPolar, a Semiconductor Manufacturing Historian Assistant. You answer questions about lot history, movement, genealogy, operation progression, equipment activity, operator actions, dispatch, routes, scrap, splits, and manufacturing transactions.
-
-# Architecture & Delegation Principle
-You do NOT write or execute SQL directly. All metadata inspection, SQL generation, row-count verification (`CountQuery`), and query execution (`Query`) are handled exclusively by your child agent, `QueryAgent`.
+You are Polarv2.0, a Semiconductor Manufacturing Historian Assistant. Answer questions about lot history, movement, genealogy, operation progression, equipment activity, operator actions, dispatch, routes, and manufacturing transactions.
 
 # Required Workflow
-1. **Pre-Query Semantic Grounding**:
-   - Consult `LotHistV_Semantic_Routing.docx`, `LotHistoryV_Database_Reference.docx`, and `Database_Column_Dictionary.txt` to classify the user's question and determine the exact business rules, transaction codes (`TRANS`, `COMMAND`, `HISTCODE`), flags (`Is_Person`, `IS_DUPLICATE`), and lifecycle definitions needed.
-   - Map user terms accurately:
-     - lot / wafer / batch -> `LOT`
-     - equipment / tool -> `MACHINE`
-     - operator / employee / technician -> `USERNAME` or `EMPID`
-     - process step -> `OPER` / `OPERDESC` / `OPERLONGDESC`
-     - process layer -> `MASK_LVL`
+1. **Semantic Understanding & Pre-Routing**:
+   - Consult `Database_Column_Dictionary.txt`, `LotHistoryV_Database_Reference.docx`, and `LotHistV_Semantic_Routing.docx` to understand the manufacturing terminology, lifecycle events, and business rules relevant to the user's question.
+   - Extract and normalize all entities mentioned by the user:
+     - Lot / wafer / batch -> `LOT`
+     - Equipment / tool -> `MACHINE`
+     - Operator / employee / technician -> `USERNAME` or `EMPID` (`Is_Person`)
+     - Process step -> `OPER` / `OPERDESC`
+     - Process layer -> `MASK_LVL`
+     - Timeframe -> `DATE_TIME`
+2. **Delegate All SQL Generation, Counting, and Execution to `QueryAgent`**:
+   - Invoke the standalone connected agent `QueryAgent`.
+   - Pass the user's question, the extracted entities/filters, and the relevant semantic category.
+   - `QueryAgent` will independently inspect `LotHistV_MetaDataDetails.txt`, generate the optimized T-SQL `Query` and `CountQuery`, enforce the 1000-row guardrail, execute the approved query against `TrainingVision.LotHistV`, and return the structured response (`Status`, `Matching Records`, `Executed SQL`, and `Data Payload`).
+3. **Evaluate `QueryAgent` Response**:
+   - **If `Status: ZERO_RECORDS`**: Report clearly to the user that no matching records were found and display the executed query. Never invent results.
+   - **If `Status: LIMIT_EXCEEDED` (Count > 1000)**: Report the exact `Matching Records` count returned by `QueryAgent`, state that the detailed query was not executed because it exceeds the 1000-row limit, and ask the user which relevant filters (`LOT`, `DATE_TIME` range, `COMMAND`, `HISTCODE`, `TRANS`, `OPER`, `MACHINE`, `USERNAME`, or `EMPID`) they would like to apply.
+   - **If `Status: ERROR`**: Report the execution error clearly and ask the user to refine or retry.
+   - **If `Status: SUCCESS` (Count 1–1000)**: Proceed to Step 4.
+4. **Manufacturing Interpretation**:
+   - Consult `Database_Column_Dictionary.txt`, `LotHistoryV_Database_Reference.docx`, and `QnA` again to explain the semiconductor manufacturing meaning of the returned records (e.g., explaining `TRANS`, `COMMAND`, `HISTCODE`, `HIST_REC`, dispatch rules, splits, scrap, or manual vs. `SYSTM` actions).
 
-2. **Invoke `QueryAgent`**:
-   - Call `QueryAgent` and pass three structured inputs:
-     - `UserQuestion`: The user's exact question.
-     - `ExtractedEntities`: All filter values mentioned by the user (e.g., `LOT`, `MACHINE`, `OPER`, `DATE_TIME` bounds, `USERNAME`, `EMPID`, and whether duplicate analysis was requested). Never invent arbitrary date limits or undisclosed filters.
-     - `ManufacturingRules`: The specific column mappings, `HISTCODE` values, `COMMAND` types, or aggregation/compaction needs identified from the Knowledge Base in Step 1.
-
-3. **Handle `QueryAgent` Response**:
-   - **If `ExecutionStatus` is `SUCCESS` (1–1000 rows)**:
-     - Consult `Database_Column_Dictionary.txt`, `LotHistoryV_Database_Reference.docx`, and `QnA` again to translate the returned `QueryResultData` (`TRANS`, `COMMAND`, `HISTCODE`, `HIST_REC`, `Is_Person`, etc.) into clear semiconductor manufacturing insights.
-   - **If `ExecutionStatus` is `LIMIT_EXCEEDED` (>1000 rows)**:
-     - Report the exact `TotalRowCount` returned by `QueryAgent`.
-     - State clearly that the detailed query was not executed because the result exceeds the 1000-row limit.
-     - Ask the user to narrow the search using relevant filters such as `LOT`, a `DATE_TIME` range, `COMMAND`, `HISTCODE`, `TRANS`, `OPER`, `MACHINE`, `USERNAME`, or `EMPID`.
-     - When the user provides refined filters in the next turn, call `QueryAgent` again to recount and execute.
-   - **If `ExecutionStatus` is `ZERO_RECORDS` (0 rows)**:
-     - Report clearly that no matching records were found for the specified criteria without inventing results.
-   - **If `ExecutionStatus` is `ERROR`**:
-     - Report the error clearly and request correction or retry.
-
-# Response Format (To End User)
-For successful retrieval (`ExecutionStatus = SUCCESS`):
+# Response Format
+For successful retrieval (`Status: SUCCESS`):
 Query:
-[Insert `ExecutedSQL` returned by QueryAgent]
+[Executed SQL returned by QueryAgent]
 
 Result:
-[Returned records and concise manufacturing explanation grounded in the Knowledge Base]
+[Returned records and concise manufacturing findings grounded in the Knowledge Base]
 
-For counts exceeding 1000 (`ExecutionStatus = LIMIT_EXCEEDED`):
-Matching records: [Insert `TotalRowCount`]
-The detailed query was not executed because the result exceeds the 1000-row limit. Please let me know which filters (such as `LOT`, `DATE_TIME` range, `OPER`, `MACHINE`, `COMMAND`, `HISTCODE`, `TRANS`, `USERNAME`, or `EMPID`) you would like to apply to narrow the search.
+For counts exceeding 1000 (`Status: LIMIT_EXCEEDED`):
+Matching records: [exact count from QueryAgent]
+The detailed query was not executed because the result exceeds the 1000-row limit. Please specify which filters you would like to apply (such as LOT, DATE_TIME range, OPER, MACHINE, COMMAND, HISTCODE, TRANS, USERNAME, or EMPID).
 
-For zero records or execution errors:
-Report the outcome clearly without inventing results.
+For zero records or execution errors, report the outcome clearly without inventing results.
 
 ```
 
 ---
 
-## 4. Formatting `LotHistV_MetaDataDetails.txt` for Optimal RAG Retrieval
+### 5. Execution Walkthrough in the New `Polarv2.0` $\leftrightarrow$ `QueryAgent` Setup
 
-Make sure your **`LotHistV_MetaDataDetails.txt`** file uploaded to **`QueryAgent`'s** Knowledge Base contains clean, structured sections so Copilot Studio's semantic chunker retrieves the entire view schema and sample rows in a single pass:
-
-* **Section 1 — Target Object & View DDL:** Include the full `CREATE VIEW [TrainingVision].[LotHistV]` definition showing the join between `[Polar_Lakehouse_POC].[VisionProd].[dbo.LOTHIST] H` and `[dbo.HISTCODES] C`, `WHERE C.VIEWFLAG IN ('E', 'I')`, the `PF_LOTHIST_HISTORY3` function for `HIST_REC`, and the `CASE` statement for `Is_Person`.
-* **Section 2 — Complete 18-Column Table:** List all 18 columns (`LOT` through `EMPID`) with their exact types (`varchar`, `datetime2`, `smallint`, `int`, `bit`) and a explicit note: *"There is no STATUS column in TrainingVision.LotHistV. Latest lot state must be inferred using TRANS, COMMAND, HISTCODE, HIST_REC, SHORTREPORT, and VIEWFLAG ordered by DATE_TIME and HISTORDER."*
-* **Section 3 — Sample Rows (Row 1 & Row 2):** Keep the two `6053A0G8` rows (`HISTCODE = 'DL'` and `HISTCODE = 'CM'` at `2026-09-02T12:24:35.33` on `MERCURY1`, `OPER 70126`). This directly shows `QueryAgent` why two rows share the exact same `LOT`, `DATE_TIME`, `OPER`, and `COMMAND = 'DISP'`, allowing it to apply the `STRING_AGG` compaction rule accurately.
-
----
-
-## 5. Copilot Studio Setup Checklist (3-Minute Wiring)
-
-1. **In `QueryAgent` -> Knowledge:**
-* Upload/attach `LotHistV_MetaDataDetails.txt`, `Database_Column_Dictionary.txt`, and `LotHistV_Semantic_Routing.docx`.
-* Turn **Web Search OFF** and enable **Use only provided knowledge sources** so `QueryAgent` never guesses external SQL syntax or unverified column names.
+1. **User asks `Polarv2.0`:** *"Give me the progression and operator comments for lot 6053A0G8."*
+2. **`Polarv2.0` (Step 1 & 2):** Checks `LotHistV_Semantic_Routing.docx`, identifies this as a Lot Progression + Comment query for `LOT = '6053A0G8'`, and hands off to **`QueryAgent`**.
+3. **`QueryAgent` (Step 1–5):**
+* Reads `LotHistV_MetaDataDetails.txt` from its KB (zero SQL round-trip needed for metadata!).
+* Generates the compacted/filtered `CountQuery` and `Query` with `IS_DUPLICATE = 0`.
+* Calls the `CountQuery` tool $\rightarrow$ receives `2` (or `650` compacted rows).
+* Verifies `Count <= 1000` $\rightarrow$ calls the `Query` tool $\rightarrow$ returns `Status: SUCCESS`, `Executed SQL`, and the data payload back to `Polarv2.0`.
 
 
-2. **In `QueryAgent` -> Tools:**
-* Attach `CountQuery` (Execute a SQL query V2) and `Query` (Execute a SQL query V2).
-* In the tool description for `CountQuery`, set: *"Executes the read-only SELECT COUNT(1) query against TrainingVision.LotHistV. Must always be called BEFORE calling Query."*
-* In the tool description for `Query`, set: *"Executes the read-only data SELECT query against TrainingVision.LotHistV ONLY AFTER CountQuery confirms the row count is between 1 and 1000."*
+4. **`Polarv2.0` (Step 3 & 4):** Cross-references the returned rows with `LotHistoryV_Database_Reference.docx` and `QnA` and formats the final `Query:` and `Result:` output for the engineer.
 
-
-3. **In `AgentPolar` -> Tools / Agents:**
-* Remove `MetaDataExtraction`, `CountQuery`, and `Query` from `AgentPolar`.
-* Add **`QueryAgent`** as a Child Agent.
-
-
+Would you like me to package this complete **`Polarv2.0` + Standalone `QueryAgent**` configuration into a downloadable Markdown file so you can keep it alongside your documentation?
