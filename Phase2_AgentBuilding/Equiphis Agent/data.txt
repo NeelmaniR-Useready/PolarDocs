@@ -1,0 +1,1 @@
+All data related to the building of the Equiphist agent , setting , prompts will be documented here .
